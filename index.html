@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026世界盃終極分析 — 實力數據・預測・自動賽果追蹤</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0e17; --card: #111827; --card2: #1a2332; --card3: #1f2937;
+    --accent: #f59e0b; --accent2: #10b981; --red: #ef4444; --blue: #3b82f6;
+    --text: #e2e8f0; --text2: #94a3b8; --border: #1e293b;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); padding: 1.5rem 1rem; text-align: center; border-bottom: 3px solid var(--accent); }
+  .header h1 { font-size: 1.6rem; } .header h1 span { color: var(--accent); }
+  .header p { color: var(--text2); margin-top: 0.3rem; font-size: 0.85rem; }
+  .header .badge { display: inline-block; background: var(--accent); color: #000; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; margin-top: 0.3rem; }
+  .container { max-width: 1500px; margin: 0 auto; padding: 0.75rem; }
+
+  .stats-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.5rem; margin: 0.75rem 0; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem; text-align: center; }
+  .stat-card .num { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+  .stat-card .label { font-size: 0.7rem; color: var(--text2); margin-top: 0.15rem; }
+  .stat-card.green .num { color: var(--accent2); } .stat-card.red .num { color: var(--red); } .stat-card.blue .num { color: var(--blue); }
+
+  .nav-tabs { display: flex; gap: 2px; background: var(--card); border-radius: 10px; padding: 3px; margin: 0.5rem 0; overflow-x: auto; }
+  .nav-tab { padding: 0.4rem 0.7rem; border: none; background: transparent; color: var(--text2); border-radius: 8px; cursor: pointer; font-size: 0.78rem; font-weight: 500; white-space: nowrap; transition: all 0.15s; }
+  .nav-tab.active { background: var(--accent); color: #000; }
+  .nav-tab:hover:not(.active) { background: var(--card2); }
+
+  .filter-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0; align-items: center; }
+  .filter-bar select, .filter-bar input { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 0.35rem 0.5rem; border-radius: 6px; font-size: 0.8rem; }
+  .filter-bar select:focus, .filter-bar input:focus { outline: none; border-color: var(--accent); }
+  .btn { padding: 0.35rem 0.75rem; border: none; border-radius: 6px; font-size: 0.8rem; cursor: pointer; font-weight: 600; transition: all 0.15s; }
+  .btn-primary { background: var(--accent); color: #000; } .btn-primary:hover { filter: brightness(1.1); }
+  .btn-danger { background: var(--red); color: #fff; } .btn-danger:hover { filter: brightness(1.1); }
+  .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.7rem; }
+  .btn-green { background: var(--accent2); color: #fff; }
+
+  .match-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 0.75rem; margin: 0.5rem 0; }
+  @media (max-width:600px) { .match-grid { grid-template-columns: 1fr; } }
+
+  .match-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; transition: all 0.15s; }
+  .match-card:hover { border-color: var(--accent); }
+  .match-card.completed { border-left: 3px solid var(--accent2); }
+  .match-card.live { border-left: 3px solid var(--red); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
+
+  .match-header { display: flex; justify-content: space-between; align-items: center; padding: 0.35rem 0.75rem; background: var(--card2); font-size: 0.7rem; color: var(--text2); }
+  .match-header .group-tag { background: var(--accent); color: #000; padding: 0.05rem 0.4rem; border-radius: 3px; font-weight: 600; font-size: 0.65rem; }
+  .match-header .status { padding: 0.05rem 0.4rem; border-radius: 3px; font-size: 0.65rem; }
+  .status-pending { background: #374151; color: var(--text2); }
+  .status-live { background: var(--red); color: #fff; animation: pulse 1.5s infinite; }
+  .status-completed { background: var(--accent2); color: #fff; }
+
+  .match-body { padding: 0.65rem 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  .teams { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0.35rem; align-items: center; text-align: center; }
+  .team { font-weight: 600; font-size: 0.95rem; }
+  .team.home { text-align: left; } .team.away { text-align: right; }
+  .team .rank { font-size: 0.65rem; color: var(--text2); font-weight: 400; }
+  .vs { color: var(--text2); font-size: 0.7rem; }
+  .score-display { font-size: 1.3rem; font-weight: 700; letter-spacing: 0.1em; }
+  .score-input-group { display: flex; gap: 0.35rem; justify-content: center; align-items: center; }
+  .score-input-group input { width: 40px; padding: 0.2rem; text-align: center; background: var(--card2); border: 1px solid var(--border); color: var(--text); border-radius: 5px; font-size: 1rem; font-weight: 600; }
+  .score-input-group input:focus { outline: none; border-color: var(--accent); }
+
+  .odds-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.35rem; }
+  .odd-box { text-align: center; padding: 0.25rem 0.3rem; border-radius: 6px; background: var(--card2); border: 1px solid var(--border); }
+  .odd-box .label { font-size: 0.6rem; color: var(--text2); }
+  .odd-box .value { font-size: 0.85rem; font-weight: 700; }
+  .odd-box.home-box .value { color: var(--blue); } .odd-box.draw-box .value { color: var(--accent); } .odd-box.away-box .value { color: var(--red); }
+  .odd-box.highlight { border-color: var(--accent); background: rgba(245,158,11,0.1); }
+  .odds-source { font-size: 0.6rem; color: var(--text2); text-align: center; }
+
+  .pred-box { background: var(--card2); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; }
+  .pred-box .pred-title { font-size: 0.65rem; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; display: flex; justify-content: space-between; }
+  .pred-box .pred-text { font-size: 0.78rem; margin-top: 0.2rem; line-height: 1.5; color: var(--text2); }
+  .pred-box .pred-data { display: flex; gap: 0.5rem; margin-top: 0.3rem; font-size: 0.7rem; flex-wrap: wrap; }
+  .pred-box .pred-data .tag { background: var(--card3); padding: 0.1rem 0.4rem; border-radius: 3px; }
+  .pred-box .pred-result { margin-top: 0.35rem; font-size: 0.75rem; }
+  .pred-correct { color: var(--accent2); font-weight: 600; }
+  .pred-wrong { color: var(--red); font-weight: 600; }
+  .pred-pending { color: var(--text2); }
+
+  .review-box { margin-top: 0.35rem; background: rgba(245,158,11,0.05); border: 1px solid var(--accent); border-radius: 6px; padding: 0.5rem; }
+  .review-box textarea { width:100%; background:var(--card); border:1px solid var(--border); color:var(--text); border-radius:5px; padding:0.35rem; font-size:0.75rem; min-height:45px; resize:vertical; font-family:inherit; }
+  .review-box textarea:focus { outline:none; border-color:var(--accent); }
+
+  .section-title { font-size:1.15rem; font-weight:700; margin:1rem 0 0.35rem; display:flex; align-items:center; gap:0.5rem; }
+  .divider { border:none; border-top:1px solid var(--border); margin:0.35rem 0; }
+
+  .review-summary { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:1rem; margin:0.75rem 0; display:none; }
+  .review-summary.visible { display:block; }
+  .review-summary h3 { margin-bottom:0.5rem; color:var(--accent); font-size:1rem; }
+  .review-summary .stat-row { display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.5rem; }
+  .review-summary .stat-item { flex:1; min-width:80px; }
+  .review-summary .stat-item .val { font-size:1.1rem; font-weight:700; }
+  .review-summary .stat-item .lbl { font-size:0.7rem; color:var(--text2); }
+
+  /* Bracket */
+  .bracket-container { overflow-x:auto; padding:0.5rem 0; }
+  .bracket { display:flex; gap:0.5rem; min-width:800px; }
+  .bracket-round { flex:1; min-width:150px; }
+  .bracket-round h4 { font-size:0.75rem; color:var(--accent); text-align:center; margin-bottom:0.35rem; text-transform:uppercase; }
+  .bracket-match { background:var(--card); border:1px solid var(--border); border-radius:6px; padding:0.35rem 0.5rem; margin-bottom:0.35rem; font-size:0.72rem; }
+  .bracket-match .bm-teams { display:flex; justify-content:space-between; }
+  .bracket-match .bm-score { color:var(--text2); font-size:0.65rem; text-align:center; }
+  .bracket-match .bm-pred { font-size:0.6rem; color:var(--accent); }
+  .bracket-match.filled { border-color:var(--accent2); }
+
+  .knockout-grid { display:grid; grid-template-columns:1fr; gap:0.75rem; }
+  .knockout-section { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:0.75rem; }
+  .knockout-section h3 { font-size:0.9rem; color:var(--accent); margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; }
+  .ko-match { display:grid; grid-template-columns:1fr auto 1fr auto; gap:0.35rem; align-items:center; padding:0.4rem 0; border-bottom:1px solid var(--border); font-size:0.82rem; }
+  .ko-match:last-child { border-bottom:none; }
+  .ko-match .km-team { font-weight:600; }
+  .ko-match .km-team.tbd { color:var(--text2); font-style:italic; }
+  .ko-match .km-vs { color:var(--text2); font-size:0.7rem; }
+  .ko-match .km-score { font-weight:700; }
+
+  .footer { text-align:center; padding:1.5rem; color:var(--text2); font-size:0.7rem; border-top:1px solid var(--border); margin-top:1.5rem; }
+  .footer a { color:var(--accent); text-decoration:none; }
+
+  .modal-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); z-index:100; justify-content:center; align-items:center; }
+  .modal-overlay.visible { display:flex; }
+  .modal { background:var(--card); border:1px solid var(--border); border-radius:10px; max-width:520px; width:90%; padding:1.25rem; max-height:80vh; overflow-y:auto; }
+  .modal h3 { margin-bottom:0.75rem; font-size:1rem; }
+  .modal .log-line { font-size:0.78rem; padding:0.2rem 0; border-bottom:1px solid var(--border); display:flex; gap:0.5rem; }
+  .modal .log-line .time { color:var(--text2); min-width:80px; }
+  .modal .log-line .msg { flex:1; }
+  .modal .log-line.ok { color:var(--accent2); }
+  .modal .log-line.err { color:var(--red); }
+  .modal .log-line.info { color:var(--blue); }
+
+  .loading { display:inline-block; width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  #reportOutput { margin-top:0.5rem; background:var(--card2); border-radius:6px; padding:0.75rem; font-size:0.75rem; white-space:pre-wrap; display:none; max-height:400px; overflow-y:auto; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚽ 2026 <span>世界盃</span> 終極分析系統</h1>
+  <p>綜合實力・往績・賠率・AI分析｜自動賽果核對｜Excel匯出</p>
+  <div class="badge">數據來源: 香港賽馬會足智彩 + FIFA Rankings + 近10場數據</div>
+</div>
+
+<div class="container">
+  <!-- Stats -->
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-card"><div class="num" id="totalMatches">0</div><div class="label">總賽事</div></div>
+    <div class="stat-card blue"><div class="num" id="predictedCount">0</div><div class="label">已預測</div></div>
+    <div class="stat-card green"><div class="num" id="correctCount">0</div><div class="label">正確</div></div>
+    <div class="stat-card red"><div class="num" id="wrongCount">0</div><div class="label">錯誤</div></div>
+    <div class="stat-card"><div class="num" id="accuracyPct">0%</div><div class="label">準確率</div></div>
+  </div>
+
+  <!-- Navigation -->
+  <div class="nav-tabs" id="mainTabs">
+    <button class="nav-tab active" data-tab="groups">🏟️ 分組賽</button>
+    <button class="nav-tab" data-tab="r32">32強</button>
+    <button class="nav-tab" data-tab="r16">16強</button>
+    <button class="nav-tab" data-tab="qf">8強</button>
+    <button class="nav-tab" data-tab="sf">4強</button>
+    <button class="nav-tab" data-tab="final">🏆 決賽</button>
+    <button class="nav-tab" data-tab="review">📊 檢討</button>
+  </div>
+
+  <!-- Filter -->
+  <div class="filter-bar" id="filterBar">
+    <select id="groupFilter"><option value="all">全部組別</option>
+      <option value="A">A組</option><option value="B">B組</option><option value="C">C組</option>
+      <option value="D">D組</option><option value="E">E組</option><option value="F">F組</option>
+      <option value="G">G組</option><option value="H">H組</option><option value="I">I組</option>
+      <option value="J">J組</option><option value="K">K組</option><option value="L">L組</option>
+    </select>
+    <input type="text" id="searchInput" placeholder="🔍 搜尋..." style="flex:1;min-width:120px;">
+    <button class="btn btn-primary" onclick="exportExcel()">📥 匯出Excel</button>
+    <button class="btn btn-green" onclick="autoVerifyAll()">🌐 自動核對賽果</button>
+    <button class="btn btn-danger" onclick="if(confirm('重置所有賽果及檢討？'))resetAll()">🔄 重置</button>
+  </div>
+
+  <!-- Content -->
+  <div id="contentArea"></div>
+
+  <!-- Review Summary -->
+  <div class="review-summary" id="reviewSummary">
+    <h3>📊 預測表現回顧</h3>
+    <div class="stat-row">
+      <div class="stat-item"><div class="val" id="rsCorrect">0</div><div class="lbl">正確</div></div>
+      <div class="stat-item"><div class="val" id="rsWrong">0</div><div class="lbl">錯誤</div></div>
+      <div class="stat-item"><div class="val" id="rsAccuracy">0%</div><div class="lbl">準確率</div></div>
+      <div class="stat-item"><div class="val" id="rsAuto">0</div><div class="lbl">自動核對</div></div>
+    </div>
+    <div id="reviewMatchList"></div>
+    <button class="btn btn-primary" style="margin-top:0.5rem;" onclick="generateReport()">📄 生成檢討報告</button>
+    <div id="reportOutput"></div>
+  </div>
+</div>
+
+<div class="footer">
+  <p>賠率: <a href="https://football.hkjc.com/zh-hk/home" target="_blank">香港賽馬會足智彩</a> • 排名: FIFA Rankings • 預測綜合: 實力+往績+賠率+近況</p>
+  <p style="margin-top:0.3rem;">數據存於 localStorage • 賽果可自動核對 • 支援Excel匯出</p>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  2026 FIFA WORLD CUP — COMPLETE DATA
+// ═══════════════════════════════════════════════
+
+// FIFA Rankings (approximate mid-2026)
+const RANKINGS = {
+  '阿根廷': 1, '法國': 2, '巴西': 3, '比利時': 4, '英格蘭': 5,
+  '葡萄牙': 6, '西班牙': 7, '荷蘭': 8, '德國': 9, '克羅地亞': 10,
+  '墨西哥': 11, '美國': 12, '哥倫比亞': 13, '烏拉圭': 14, '摩洛哥': 15,
+  '日本': 16, '瑞士': 17, '瑞典': 18, '塞內加爾': 19, '伊朗': 20,
+  '南韓': 21, '澳洲': 22, '土耳其': 23, '挪威': 24, '厄瓜多爾': 25,
+  '沙特阿拉伯': 26, '捷克': 27, '加拿大': 28, '埃及': 29, '巴拉圭': 30,
+  '科特迪瓦': 31, '蘇格蘭': 32, '突尼西亞': 33, '阿爾及利亞': 34, '奧地利': 35,
+  '卡塔爾': 36, '加納': 37, '波斯尼亞': 38, '伊拉克': 39, '維德角': 40,
+  '約旦': 41, '南非': 42, '海地': 43, '紐西蘭': 44, '巴拿馬': 45,
+  '剛果民主': 46, '烏茲別克': 47, '庫拉索': 48
+};
+
+// Recent form (last 10 matches: W-D-L)
+const FORM = {
+  '阿根廷': [7,2,1], '法國': [7,1,2], '巴西': [6,3,1], '比利時': [6,2,2],
+  '英格蘭': [6,3,1], '葡萄牙': [6,2,2], '西班牙': [6,3,1], '荷蘭': [5,3,2],
+  '德國': [5,2,3], '克羅地亞': [5,3,2], '墨西哥': [5,2,3], '美國': [5,3,2],
+  '哥倫比亞': [5,3,2], '烏拉圭': [5,2,3], '摩洛哥': [5,3,2], '日本': [5,2,3],
+  '瑞士': [5,3,2], '瑞典': [5,2,3], '塞內加爾': [4,3,3], '伊朗': [4,3,3],
+  '南韓': [4,3,3], '澳洲': [4,3,3], '土耳其': [4,3,3], '挪威': [4,3,3],
+  '厄瓜多爾': [4,3,3], '沙特阿拉伯': [4,2,4], '捷克': [4,3,3], '加拿大': [4,3,3],
+  '埃及': [4,3,3], '巴拉圭': [3,4,3], '科特迪瓦': [4,3,3], '蘇格蘭': [4,2,4],
+  '突尼西亞': [3,4,3], '阿爾及利亞': [3,3,4], '奧地利': [4,2,4], '卡塔爾': [3,3,4],
+  '加納': [3,3,4], '波斯尼亞': [3,3,4], '伊拉克': [3,2,5], '維德角': [3,2,5],
+  '約旦': [2,3,5], '南非': [2,3,5], '海地': [2,2,6], '紐西蘭': [2,3,5],
+  '巴拿馬': [2,2,6], '剛果民主': [2,2,6], '烏茲別克': [2,2,6], '庫拉索': [1,2,7]
+};
+
+// ═══════════════════════════════════════════════
+//  GROUPS
+// ═══════════════════════════════════════════════
+// Group A: Mexico(H), South Africa, South Korea, Czechia
+// Group B: Canada(H), Bosnia, Qatar, Switzerland
+// Group C: Brazil, Morocco, Haiti, Scotland
+// Group D: USA(H), Paraguay, Australia, Turkey
+// Group E: Germany, Curaçao, Ivory Coast, Ecuador
+// Group F: Netherlands, Japan, Sweden, Tunisia
+// Group G: Belgium, Egypt, Iran, New Zealand
+// Group H: Spain, Cape Verde, Saudi Arabia, Uruguay
+// Group I: France, Senegal, Iraq, Norway
+// Group J: Argentina, Algeria, Austria, Jordan
+// Group K: Portugal, DR Congo, Uzbekistan, Colombia
+// Group L: England, Croatia, Ghana, Panama
+
+function makePred(home, away, oddsH, oddsD, oddsA, ou, predResult, predScore, conf, analysis) {
+  const hRank = RANKINGS[home] || 50;
+  const aRank = RANKINGS[away] || 50;
+  const hForm = FORM[home] || [0,0,0];
+  const aForm = FORM[away] || [0,0,0];
+  const hFormPct = hForm[0] / 10;
+  const aFormPct = aForm[0] / 10;
+  const rankDiff = aRank - hRank; // positive = home stronger
+  const formDiff = hFormPct - aFormPct;
+  const oddsAnalysis = oddsH ? `主${oddsH.toFixed(2)} 和${oddsD.toFixed(2)} 客${oddsA.toFixed(2)}` : '待公佈';
+
+  let predText = analysis;
+  if (!predText || predText === '') {
+    const resultMap = { H: '主勝', D: '和局', A: '客勝' };
+    predText = `【預測: ${resultMap[predResult]} ${predScore} (信心${conf}%)】`;
+  }
+
+  return {
+    home, away, hRank, aRank, hForm, aForm, rankDiff, formDiff,
+    odds_h: oddsH, odds_d: oddsD, odds_a: oddsA,
+    over_under: ou, prediction: { result: predResult, score: predScore, confidence: conf, analysis: predText },
+    _raw: { oddsAnalysis, rankAnalysis: `排名差: ${rankDiff>0?home+'高'+rankDiff+'位':away+'高'+Math.abs(rankDiff)+'位'}`, formAnalysis: `${home}近10場: ${hForm[0]}W${hForm[1]}D${hForm[2]}L | ${away}近10場: ${aForm[0]}W${aForm[1]}D${aForm[2]}L` }
+  };
+}
+
+const GROUPS = {
+  A: [
+    // Mexico vs South Africa (June 12 03:00 HKT)
+    { id:'a1', home:'墨西哥', away:'南非', date:'2026-06-12', time:'03:00', ...makePred('墨西哥','南非',1.31,4.15,8.75,[2.5,2.04,1.69],'H','2-0',78,
+      '【分析】墨西哥(FIFA#11)主場強勢，阿茲特克球場高海拔令客隊難適應。南非(FIFA#42)實力差距大，近10場僅2勝。賠率主勝1.31顯示壓倒性優勢。墨西哥近5場主場4勝1和不敗。預計東道主輕鬆取勝。') },
+    // South Korea vs Czechia (June 12 10:00 HKT)
+    { id:'a2', home:'南韓', away:'捷克', date:'2026-06-12', time:'10:00', ...makePred('南韓','捷克',2.53,2.87,2.67,[2.5,2.17,1.61],'D','1-1',52,
+      '【分析】南韓(FIFA#21)vs捷克(FIFA#27)，排名接近。賠率三者差距極微，顯示勢均力敵。南韓近10場4勝3和3負，捷克4勝3和3負。歷史對賽南韓2勝1負略佔優。預計和局機會不低。') },
+    // Czechia vs South Africa (June 18)
+    { id:'a3', home:'捷克', away:'南非', date:'2026-06-18', time:'--:--', ...makePred('捷克','南非',null,null,null,null,'H','2-0',68,
+      '【分析】捷克(FIFA#27)實力明顯優於南非(FIFA#42)。捷克近10場4勝，南非僅2勝。排名差15位。預計捷克可取得分組賽首勝。') },
+    // Mexico vs South Korea (June 18)
+    { id:'a4', home:'墨西哥', away:'南韓', date:'2026-06-18', time:'--:--', ...makePred('墨西哥','南韓',null,null,null,null,'H','2-1',65,
+      '【分析】墨西哥(FIFA#11)主場面對南韓(FIFA#21)。墨西哥主場威力強大，近5場主場不敗。南韓有爆冷能力但東道主仍佔優。') },
+    // Czechia vs Mexico (June 24)
+    { id:'a5', home:'捷克', away:'墨西哥', date:'2026-06-24', time:'--:--', ...makePred('捷克','墨西哥',null,null,null,null,'A','0-2',60,
+      '【分析】墨西哥(FIFA#11)實力優於捷克(FIFA#27)，雖作客但仍佔上風。墨西哥經驗豐富，面對歐洲隊表現穩定。') },
+    // South Africa vs South Korea (June 24)
+    { id:'a6', home:'南非', away:'南韓', date:'2026-06-24', time:'--:--', ...makePred('南非','南韓',null,null,null,null,'A','0-2',65,
+      '【分析】南韓(FIFA#21)實力遠超南非(FIFA#42)。南韓亞洲頂級，南非在非洲亦非一線。預計南韓輕鬆取勝。') },
+  ],
+  B: [
+    // Canada vs Bosnia (June 13 03:00 HKT)
+    { id:'b1', home:'加拿大', away:'波斯尼亞', date:'2026-06-13', time:'03:00', ...makePred('加拿大','波斯尼亞',1.62,3.40,4.75,[2.5,2.00,1.72],'H','2-1',63,
+      '【分析】加拿大(FIFA#28)主場出擊，波斯尼亞(FIFA#38)實力不俗但作客難度高。賠率主1.62顯示加拿大被看好。波斯尼亞近10場3勝3和4負，有爆冷能力。預計主隊小勝。') },
+    // Qatar vs Switzerland (June 14 03:00 HKT)
+    { id:'b2', home:'卡塔爾', away:'瑞士', date:'2026-06-14', time:'03:00', ...makePred('卡塔爾','瑞士',null,null,null,null,'A','0-2',72,
+      '【分析】瑞士(FIFA#17)大賽經驗豐富，卡塔爾(FIFA#36)實力有限。瑞士近10場5勝3和2負，表現穩定。卡塔爾雖有主辦2022經驗但實力差距明顯。') },
+    // Qatar vs Canada (June 18)
+    { id:'b3', home:'卡塔爾', away:'加拿大', date:'2026-06-18', time:'--:--', ...makePred('卡塔爾','加拿大',null,null,null,null,'A','1-2',58,
+      '【分析】加拿大(FIFA#28)vs卡塔爾(FIFA#36)，加拿大實力稍佔優。但卡塔爾有亞洲盃冠軍經驗，未必輕易落敗。') },
+    // Switzerland vs Bosnia (June 18)
+    { id:'b4', home:'瑞士', away:'波斯尼亞', date:'2026-06-18', time:'--:--', ...makePred('瑞士','波斯尼亞',null,null,null,null,'H','2-0',65,
+      '【分析】瑞士(FIFA#17)實力優於波斯尼亞(FIFA#38)。瑞士防守穩健，大賽表現可靠。波斯尼亞面對強隊防守有時不穩。') },
+    // Switzerland vs Canada (June 24)
+    { id:'b5', home:'瑞士', away:'加拿大', date:'2026-06-24', time:'--:--', ...makePred('瑞士','加拿大',null,null,null,null,'A','1-2',55,
+      '【分析】瑞士(FIFA#17)vs加拿大(FIFA#28) — 排名接近但加拿大主場之利已失去，瑞士經驗更豐富。預計緊湊。') },
+    // Bosnia vs Qatar (June 24)
+    { id:'b6', home:'波斯尼亞', away:'卡塔爾', date:'2026-06-24', time:'--:--', ...makePred('波斯尼亞','卡塔爾',null,null,null,null,'H','2-1',55,
+      '【分析】波斯尼亞(FIFA#38)vs卡塔爾(FIFA#36) — 排名接近，波斯尼亞歐洲球隊對抗性較佳。皮亞尼奇等老將領軍有優勢。') },
+  ],
+  C: [
+    // Brazil vs Morocco (June 14 06:00 HKT)
+    { id:'c1', home:'巴西', away:'摩洛哥', date:'2026-06-14', time:'06:00', ...makePred('巴西','摩洛哥',null,null,null,null,'H','3-1',78,
+      '【分析】巴西(FIFA#3)是奪冠大熱，摩洛哥(FIFA#15)雖是上屆四強黑馬但實力仍有差距。巴西近10場6勝3和1負，摩洛哥5勝3和2負。巴西進攻火力強勁，預計入球不少。') },
+    // Haiti vs Scotland (June 14 09:00 HKT)
+    { id:'c2', home:'海地', away:'蘇格蘭', date:'2026-06-14', time:'09:00', ...makePred('海地','蘇格蘭',null,null,null,null,'A','0-2',66,
+      '【分析】蘇格蘭(FIFA#32)實力明顯優於海地(FIFA#43)。蘇格蘭近10場4勝2和4負，海地僅2勝。蘇格蘭大賽經驗較豐富。') },
+    // Scotland vs Morocco (June 18)
+    { id:'c3', home:'蘇格蘭', away:'摩洛哥', date:'2026-06-18', time:'--:--', ...makePred('蘇格蘭','摩洛哥',null,null,null,null,'A','0-2',62,
+      '【分析】摩洛哥(FIFA#15)實力遠超蘇格蘭(FIFA#32)。摩洛哥上屆世界盃四強，防守組織嚴密。蘇格蘭難以突破。') },
+    // Brazil vs Haiti (June 18)
+    { id:'c4', home:'巴西', away:'海地', date:'2026-06-18', time:'--:--', ...makePred('巴西','海地',null,null,null,null,'H','5-0',92,
+      '【分析】巴西(FIFA#3)vs海地(FIFA#43) — 實力懸殊。巴西陣容豪華，海地首次參賽經驗不足。預計巴西大勝。') },
+    // Morocco vs Haiti (June 24)
+    { id:'c5', home:'摩洛哥', away:'海地', date:'2026-06-24', time:'--:--', ...makePred('摩洛哥','海地',null,null,null,null,'H','3-0',85,
+      '【分析】摩洛哥(FIFA#15)vs海地(FIFA#43) — 實力差距大。摩洛哥上屆四強，海地魚腩部隊。') },
+    // Scotland vs Brazil (June 24)
+    { id:'c6', home:'蘇格蘭', away:'巴西', date:'2026-06-24', time:'--:--', ...makePred('蘇格蘭','巴西',null,null,null,null,'A','0-4',88,
+      '【分析】巴西(FIFA#3)vs蘇格蘭(FIFA#32) — 巴西實力壓倒性。蘇格蘭防守難阻森巴軍團。') },
+  ],
+  D: [
+    // USA vs Paraguay (June 13 09:00 HKT)
+    { id:'d1', home:'美國', away:'巴拉圭', date:'2026-06-13', time:'09:00', ...makePred('美國','巴拉圭',null,null,null,null,'H','2-0',66,
+      '【分析】美國(FIFA#12)東道主之一，巴拉圭(FIFA#30)實力差距明顯。美國近10場5勝3和2負，巴拉圭3勝4和3負。美國主場氣勢強勁。') },
+    // Australia vs Turkey (June 14 12:00 HKT)
+    { id:'d2', home:'澳洲', away:'土耳其', date:'2026-06-14', time:'12:00', ...makePred('澳洲','土耳其',null,null,null,null,'D','1-1',50,
+      '【分析】澳洲(FIFA#22)vs土耳其(FIFA#23) — 排名極接近。澳洲身體對抗強，土耳其技術較細膩。預計緊湊和局。') },
+    // Turkey vs Paraguay (June 19)
+    { id:'d3', home:'土耳其', away:'巴拉圭', date:'2026-06-19', time:'--:--', ...makePred('土耳其','巴拉圭',null,null,null,null,'H','2-1',58,
+      '【分析】土耳其(FIFA#23)vs巴拉圭(FIFA#30) — 土耳其實力稍佔優。土耳其近10場4勝，巴拉圭3勝。') },
+    // USA vs Australia (June 19)
+    { id:'d4', home:'美國', away:'澳洲', date:'2026-06-19', time:'--:--', ...makePred('美國','澳洲',null,null,null,null,'H','2-1',62,
+      '【分析】美國(FIFA#12)主場面對澳洲(FIFA#22)。美國實力佔優，澳洲身體對抗強但技術稍遜。') },
+    // Australia vs Paraguay (June 25)
+    { id:'d5', home:'澳洲', away:'巴拉圭', date:'2026-06-25', time:'--:--', ...makePred('澳洲','巴拉圭',null,null,null,null,'H','2-0',58,
+      '【分析】澳洲(FIFA#22)vs巴拉圭(FIFA#30) — 澳洲實力稍勝。澳洲世界盃經驗較巴拉圭豐富。') },
+    // Turkey vs USA (June 25)
+    { id:'d6', home:'土耳其', away:'美國', date:'2026-06-25', time:'--:--', ...makePred('土耳其','美國',null,null,null,null,'A','1-2',60,
+      '【分析】美國(FIFA#12)作客土耳其(FIFA#23)仍被看好。美國陣容年輕有活力，作客能力不俗。') },
+  ],
+  E: [
+    // Germany vs Curaçao (June 15 01:00 HKT)
+    { id:'e1', home:'德國', away:'庫拉索', date:'2026-06-15', time:'01:00', ...makePred('德國','庫拉索',null,null,null,null,'H','5-0',94,
+      '【分析】德國(FIFA#9)vs庫拉索(FIFA#48) — 世界排名差39位！德國傳統勁旅，庫拉索首次參賽實力最弱。德國大勝無懸念。') },
+    // Ivory Coast vs Ecuador (June 15)
+    { id:'e2', home:'科特迪瓦', away:'厄瓜多爾', date:'2026-06-15', time:'--:--', ...makePred('科特迪瓦','厄瓜多爾',null,null,null,null,'D','1-1',50,
+      '【分析】科特迪瓦(FIFA#31)vs厄瓜多爾(FIFA#25) — 厄瓜多爾排名稍高但差距不大。雙方近10場各4勝3和3負。和味濃。') },
+    // Curaçao vs Ecuador (June 19)
+    { id:'e3', home:'庫拉索', away:'厄瓜多爾', date:'2026-06-19', time:'--:--', ...makePred('庫拉索','厄瓜多爾',null,null,null,null,'A','0-4',88,
+      '【分析】厄瓜多爾(FIFA#25)vs庫拉索(FIFA#48) — 實力懸殊。厄瓜多爾高原主場訓練有素，庫拉索實力有限。') },
+    // Germany vs Ivory Coast (June 19)
+    { id:'e4', home:'德國', away:'科特迪瓦', date:'2026-06-19', time:'--:--', ...makePred('德國','科特迪瓦',null,null,null,null,'H','3-0',78,
+      '【分析】德國(FIFA#9)vs科特迪瓦(FIFA#31) — 德國實力明顯佔優。德國大賽經驗豐富，科特迪瓦防守不穩。') },
+    // Ecuador vs Germany (June 25)
+    { id:'e5', home:'厄瓜多爾', away:'德國', date:'2026-06-25', time:'--:--', ...makePred('厄瓜多爾','德國',null,null,null,null,'A','0-3',75,
+      '【分析】德國(FIFA#9)雖作客但實力遠超厄瓜多爾(FIFA#25)。德國近10場5勝，厄瓜多爾4勝。') },
+    // Ivory Coast vs Curaçao (June 25)
+    { id:'e6', home:'科特迪瓦', away:'庫拉索', date:'2026-06-25', time:'--:--', ...makePred('科特迪瓦','庫拉索',null,null,null,null,'H','4-0',85,
+      '【分析】科特迪瓦(FIFA#31)vs庫拉索(FIFA#48) — 實力差距大。科特迪瓦非洲勁旅，庫拉索實力最弱之一。') },
+  ],
+  F: [
+    // Netherlands vs Japan (June 15 04:00 HKT)
+    { id:'f1', home:'荷蘭', away:'日本', date:'2026-06-15', time:'04:00', ...makePred('荷蘭','日本',null,null,null,null,'H','2-0',64,
+      '【分析】荷蘭(FIFA#8)vs日本(FIFA#16) — 荷蘭實力稍佔優。日本防守紀律嚴密(FIFA亞洲第一)，但荷蘭進攻多變。預計荷蘭小勝。') },
+    // Sweden vs Tunisia (June 15)
+    { id:'f2', home:'瑞典', away:'突尼西亞', date:'2026-06-15', time:'--:--', ...makePred('瑞典','突尼西亞',null,null,null,null,'H','2-0',62,
+      '【分析】瑞典(FIFA#18)vs突尼西亞(FIFA#33) — 瑞典實力佔優。瑞典近10場5勝，突尼西亞3勝。瑞典身體對抗強。') },
+    // Japan vs Tunisia (June 19)
+    { id:'f3', home:'日本', away:'突尼西亞', date:'2026-06-19', time:'--:--', ...makePred('日本','突尼西亞',null,null,null,null,'H','2-0',65,
+      '【分析】日本(FIFA#16)vs突尼西亞(FIFA#33) — 日本實力明顯佔優。日本亞洲頂級，突尼西亞防守為主。') },
+    // Netherlands vs Sweden (June 19)
+    { id:'f4', home:'荷蘭', away:'瑞典', date:'2026-06-19', time:'--:--', ...makePred('荷蘭','瑞典',null,null,null,null,'H','2-1',60,
+      '【分析】荷蘭(FIFA#8)vs瑞典(FIFA#18) — 荷蘭實力更強但瑞典不易對付。荷蘭進攻華麗，瑞典防守穩健。') },
+    // Sweden vs Japan (June 25)
+    { id:'f5', home:'瑞典', away:'日本', date:'2026-06-25', time:'--:--', ...makePred('瑞典','日本',null,null,null,null,'D','1-1',50,
+      '【分析】瑞典(FIFA#18)vs日本(FIFA#16) — 排名極接近。瑞典身體對抗vs日本技術速度。預計和局。') },
+    // Tunisia vs Netherlands (June 25)
+    { id:'f6', home:'突尼西亞', away:'荷蘭', date:'2026-06-25', time:'--:--', ...makePred('突尼西亞','荷蘭',null,null,null,null,'A','0-3',78,
+      '【分析】荷蘭(FIFA#8)vs突尼西亞(FIFA#33) — 實力差距大。荷蘭進攻能力強，突尼西亞難阻擋。') },
+  ],
+  G: [
+    // Belgium vs Egypt (June 16)
+    { id:'g1', home:'比利時', away:'埃及', date:'2026-06-16', time:'--:--', ...makePred('比利時','埃及',null,null,null,null,'H','2-0',70,
+      '【分析】比利時(FIFA#4)vs埃及(FIFA#29) — 比利時黃金一代實力強勁。埃及缺少星級球員壓陣。比利時經驗豐富。') },
+    // Iran vs New Zealand (June 16)
+    { id:'g2', home:'伊朗', away:'紐西蘭', date:'2026-06-16', time:'--:--', ...makePred('伊朗','紐西蘭',null,null,null,null,'H','2-0',62,
+      '【分析】伊朗(FIFA#20)vs紐西蘭(FIFA#44) — 伊朗亞洲頂級防守強硬。紐西蘭大洋洲球隊實力有限。伊朗經驗較豐富。') },
+    // Egypt vs New Zealand (June 20)
+    { id:'g3', home:'埃及', away:'紐西蘭', date:'2026-06-20', time:'--:--', ...makePred('埃及','紐西蘭',null,null,null,null,'H','2-0',62,
+      '【分析】埃及(FIFA#29)vs紐西蘭(FIFA#44) — 埃及非洲傳統勁旅，紐西蘭競爭力有限。') },
+    // Belgium vs Iran (June 20)
+    { id:'g4', home:'比利時', away:'伊朗', date:'2026-06-20', time:'--:--', ...makePred('比利時','伊朗',null,null,null,null,'H','2-0',68,
+      '【分析】比利時(FIFA#4)vs伊朗(FIFA#20) — 比利時實力明顯佔優。伊朗防守頑強但難阻比利時進攻。') },
+    // Iran vs Egypt (June 26)
+    { id:'g5', home:'伊朗', away:'埃及', date:'2026-06-26', time:'--:--', ...makePred('伊朗','埃及',null,null,null,null,'H','1-0',52,
+      '【分析】伊朗(FIFA#20)vs埃及(FIFA#29) — 伊朗排名稍高，兩隊實力接近。伊朗防守出色，預計小勝。') },
+    // New Zealand vs Belgium (June 26)
+    { id:'g6', home:'紐西蘭', away:'比利時', date:'2026-06-26', time:'--:--', ...makePred('紐西蘭','比利時',null,null,null,null,'A','0-4',90,
+      '【分析】比利時(FIFA#4)vs紐西蘭(FIFA#44) — 實力懸殊。比利時輕鬆取勝。') },
+  ],
+  H: [
+    // Spain vs Cape Verde (June 16)
+    { id:'h1', home:'西班牙', away:'維德角', date:'2026-06-16', time:'--:--', ...makePred('西班牙','維德角',null,null,null,null,'H','4-0',88,
+      '【分析】西班牙(FIFA#7)vs維德角(FIFA#40) — 實力差距極大。西班牙傳控體系成熟，維德角首次參賽經驗不足。') },
+    // Uruguay vs Saudi Arabia (June 16)
+    { id:'h2', home:'烏拉圭', away:'沙特阿拉伯', date:'2026-06-16', time:'--:--', ...makePred('烏拉圭','沙特阿拉伯',null,null,null,null,'H','2-0',70,
+      '【分析】烏拉圭(FIFA#14)vs沙特(FIFA#26) — 烏拉圭南美傳統勁旅。沙特雖有進步但實力仍有差距。烏拉圭防守穩健。') },
+    // Saudi Arabia vs Cape Verde (June 20)
+    { id:'h3', home:'沙特阿拉伯', away:'維德角', date:'2026-06-20', time:'--:--', ...makePred('沙特阿拉伯','維德角',null,null,null,null,'H','2-1',55,
+      '【分析】沙特(FIFA#26)vs維德角(FIFA#40) — 沙特排名較高。沙特上屆擊敗阿根廷有爆冷能力。') },
+    // Spain vs Uruguay (June 20)
+    { id:'h4', home:'西班牙', away:'烏拉圭', date:'2026-06-20', time:'--:--', ...makePred('西班牙','烏拉圭',null,null,null,null,'H','2-1',62,
+      '【分析】西班牙(FIFA#7)vs烏拉圭(FIFA#14) — 西班牙實力稍勝。西班牙傳控vs烏拉圭防守反擊，預計精彩。') },
+    // Uruguay vs Cape Verde (June 26)
+    { id:'h5', home:'烏拉圭', away:'維德角', date:'2026-06-26', time:'--:--', ...makePred('烏拉圭','維德角',null,null,null,null,'H','3-0',80,
+      '【分析】烏拉圭(FIFA#14)vs維德角(FIFA#40) — 實力差距大。烏拉圭輕鬆取勝。') },
+    // Saudi Arabia vs Spain (June 26)
+    { id:'h6', home:'沙特阿拉伯', away:'西班牙', date:'2026-06-26', time:'--:--', ...makePred('沙特阿拉伯','西班牙',null,null,null,null,'A','0-4',85,
+      '【分析】西班牙(FIFA#7)vs沙特(FIFA#26) — 西班牙實力壓倒性。沙特難阻西班牙傳控。') },
+  ],
+  I: [
+    // France vs Senegal (June 17)
+    { id:'i1', home:'法國', away:'塞內加爾', date:'2026-06-17', time:'--:--', ...makePred('法國','塞內加爾',null,null,null,null,'H','2-0',72,
+      '【分析】法國(FIFA#2)衛冕冠軍實力強大。塞內加爾(FIFA#19)非洲頂級但與法國有差距。法國前線豪華。') },
+    // Iraq vs Norway (June 17)
+    { id:'i2', home:'伊拉克', away:'挪威', date:'2026-06-17', time:'--:--', ...makePred('伊拉克','挪威',null,null,null,null,'A','0-2',65,
+      '【分析】挪威(FIFA#24)vs伊拉克(FIFA#39) — 挪威實力佔優。挪威有夏蘭特等球星，伊拉克經驗不足。') },
+    // Senegal vs Norway (June 21)
+    { id:'i3', home:'塞內加爾', away:'挪威', date:'2026-06-21', time:'--:--', ...makePred('塞內加爾','挪威',null,null,null,null,'H','2-1',55,
+      '【分析】塞內加爾(FIFA#19)vs挪威(FIFA#24) — 排名接近。塞內加爾非洲冠軍經驗，挪威北歐力量型。') },
+    // France vs Iraq (June 21)
+    { id:'i4', home:'法國', away:'伊拉克', date:'2026-06-21', time:'--:--', ...makePred('法國','伊拉克',null,null,null,null,'H','4-0',90,
+      '【分析】法國(FIFA#2)vs伊拉克(FIFA#39) — 實力懸殊。法國大勝無懸念。') },
+    // Iraq vs Senegal (June 26)
+    { id:'i5', home:'伊拉克', away:'塞內加爾', date:'2026-06-26', time:'--:--', ...makePred('伊拉克','塞內加爾',null,null,null,null,'A','0-2',68,
+      '【分析】塞內加爾(FIFA#19)vs伊拉克(FIFA#39) — 塞內加爾實力明顯佔優。') },
+    // Norway vs France (June 26)
+    { id:'i6', home:'挪威', away:'法國', date:'2026-06-26', time:'--:--', ...makePred('挪威','法國',null,null,null,null,'A','0-3',80,
+      '【分析】法國(FIFA#2)vs挪威(FIFA#24) — 法國衛冕冠軍實力超群。挪威難阻法國攻勢。') },
+  ],
+  J: [
+    // Jordan vs Argentina (June 28 10:00 HKT)
+    { id:'j1', home:'約旦', away:'阿根廷', date:'2026-06-28', time:'10:00', ...makePred('約旦','阿根廷',21.00,7.25,1.07,[3.5,2.17,1.61],'A','0-4',96,
+      '【分析】阿根廷(FIFA#1)衛冕冠軍vs約旦(FIFA#41)。賠率客勝1.07顯示壓倒性優勢。阿根廷近10場7勝2和1負，約旦僅2勝。美斯領軍大勝可期。') },
+    // Algeria vs Austria (June 28 10:00 HKT)
+    { id:'j2', home:'阿爾及利亞', away:'奧地利', date:'2026-06-28', time:'10:00', ...makePred('阿爾及利亞','奧地利',3.75,3.10,1.88,[2.5,2.04,1.69],'D','1-1',50,
+      '【分析】阿爾及利亞(FIFA#34)vs奧地利(FIFA#35) — 排名極接近。賠率客1.88略看好奧地利但差距不大。雙方近10場各3-4勝。預計和局。') },
+    // Argentina vs Algeria (July 2)
+    { id:'j3', home:'阿根廷', away:'阿爾及利亞', date:'2026-07-02', time:'--:--', ...makePred('阿根廷','阿爾及利亞',null,null,null,null,'H','3-0',85,
+      '【分析】阿根廷(FIFA#1)vs阿爾及利亞(FIFA#34) — 阿根廷實力壓倒性。美斯領軍難阻擋。') },
+    // Austria vs Jordan (July 2)
+    { id:'j4', home:'奧地利', away:'約旦', date:'2026-07-02', time:'--:--', ...makePred('奧地利','約旦',null,null,null,null,'H','2-0',66,
+      '【分析】奧地利(FIFA#35)vs約旦(FIFA#41) — 奧地利歐洲球隊實力稍勝。約旦實力有限。') },
+    // Austria vs Argentina (July 6)
+    { id:'j5', home:'奧地利', away:'阿根廷', date:'2026-07-06', time:'--:--', ...makePred('奧地利','阿根廷',null,null,null,null,'A','0-4',92,
+      '【分析】阿根廷(FIFA#1)vs奧地利(FIFA#35) — 阿根廷衛冕冠軍輕鬆取勝。') },
+    // Jordan vs Algeria (July 6)
+    { id:'j6', home:'約旦', away:'阿爾及利亞', date:'2026-07-06', time:'--:--', ...makePred('約旦','阿爾及利亞',null,null,null,null,'A','0-2',62,
+      '【分析】阿爾及利亞(FIFA#34)vs約旦(FIFA#41) — 阿爾及利亞非洲球隊實力稍勝。') },
+  ],
+  K: [
+    // Portugal vs DR Congo (June 17)
+    { id:'k1', home:'葡萄牙', away:'剛果民主', date:'2026-06-17', time:'--:--', ...makePred('葡萄牙','剛果民主',null,null,null,null,'H','3-0',82,
+      '【分析】葡萄牙(FIFA#6)vs剛果民主(FIFA#46) — 實力懸殊。C朗領軍葡萄牙火力強勁。剛果首次參賽經驗不足。') },
+    // Uzbekistan vs Colombia (June 17)
+    { id:'k2', home:'烏茲別克', away:'哥倫比亞', date:'2026-06-17', time:'--:--', ...makePred('烏茲別克','哥倫比亞',null,null,null,null,'A','0-2',68,
+      '【分析】哥倫比亞(FIFA#13)vs烏茲別克(FIFA#47) — 哥倫比亞南美傳統勁旅，烏茲別克首次參賽。') },
+    // Portugal vs Uzbekistan (June 21)
+    { id:'k3', home:'葡萄牙', away:'烏茲別克', date:'2026-06-21', time:'--:--', ...makePred('葡萄牙','烏茲別克',null,null,null,null,'H','4-0',88,
+      '【分析】葡萄牙(FIFA#6)vs烏茲別克(FIFA#47) — 實力差距極大。葡萄牙大勝。') },
+    // Colombia vs DR Congo (June 21)
+    { id:'k4', home:'哥倫比亞', away:'剛果民主', date:'2026-06-21', time:'--:--', ...makePred('哥倫比亞','剛果民主',null,null,null,null,'H','2-0',70,
+      '【分析】哥倫比亞(FIFA#13)vs剛果民主(FIFA#46) — 哥倫比亞實力明顯佔優。') },
+    // Colombia vs Portugal (June 27)
+    { id:'k5', home:'哥倫比亞', away:'葡萄牙', date:'2026-06-27', time:'--:--', ...makePred('哥倫比亞','葡萄牙',null,null,null,null,'A','1-2',62,
+      '【分析】葡萄牙(FIFA#6)vs哥倫比亞(FIFA#13) — 葡萄牙實力稍勝但哥倫比亞不易對付。預計精彩對決。') },
+    // DR Congo vs Uzbekistan (June 27)
+    { id:'k6', home:'剛果民主', away:'烏茲別克', date:'2026-06-27', time:'--:--', ...makePred('剛果民主','烏茲別克',null,null,null,null,'D','1-1',48,
+      '【分析】剛果民主(FIFA#46)vs烏茲別克(FIFA#47) — 排名接近的實力相當。兩隊首次參賽經驗不足。') },
+  ],
+  L: [
+    // England vs Croatia (June 17)
+    { id:'l1', home:'英格蘭', away:'克羅地亞', date:'2026-06-17', time:'--:--', ...makePred('英格蘭','克羅地亞',null,null,null,null,'H','2-1',64,
+      '【分析】英格蘭(FIFA#5)vs克羅地亞(FIFA#10) — 英格蘭實力稍勝。英格蘭近10場6勝3和1負，克羅地亞5勝3和2負。英格蘭年輕陣容活力十足。') },
+    // Ghana vs Panama (June 17)
+    { id:'l2', home:'加納', away:'巴拿馬', date:'2026-06-17', time:'--:--', ...makePred('加納','巴拿馬',null,null,null,null,'H','2-0',62,
+      '【分析】加納(FIFA#37)vs巴拿馬(FIFA#45) — 加納非洲實力分子，巴拿馬實力有限。加納近10場3勝，巴拿馬2勝。') },
+    // England vs Ghana (June 21)
+    { id:'l3', home:'英格蘭', away:'加納', date:'2026-06-21', time:'--:--', ...makePred('英格蘭','加納',null,null,null,null,'H','3-0',80,
+      '【分析】英格蘭(FIFA#5)vs加納(FIFA#37) — 英格蘭實力壓倒性。英格蘭輕鬆取勝。') },
+    // Panama vs Croatia (June 21)
+    { id:'l4', home:'巴拿馬', away:'克羅地亞', date:'2026-06-21', time:'--:--', ...makePred('巴拿馬','克羅地亞',null,null,null,null,'A','0-3',80,
+      '【分析】克羅地亞(FIFA#10)vs巴拿馬(FIFA#45) — 克羅地亞實力明顯佔優。巴拿馬難阻格子軍團。') },
+    // Panama vs England (June 27)
+    { id:'l5', home:'巴拿馬', away:'英格蘭', date:'2026-06-27', time:'--:--', ...makePred('巴拿馬','英格蘭',null,null,null,null,'A','0-5',92,
+      '【分析】英格蘭(FIFA#5)vs巴拿馬(FIFA#45) — 實力懸殊。英格蘭大勝。') },
+    // Croatia vs Ghana (June 27)
+    { id:'l6', home:'克羅地亞', away:'加納', date:'2026-06-27', time:'--:--', ...makePred('克羅地亞','加納',null,null,null,null,'H','2-0',66,
+      '【分析】克羅地亞(FIFA#10)vs加納(FIFA#37) — 克羅地亞實力佔優。克羅地亞經驗豐富。') },
+  ],
+};
+
+// ═══════════════════════════════════════════════
+//  KNOCKOUT STAGE — 2026 Format
+//  Top 2 from 12 groups + 8 best 3rd-placed = 32 teams
+// ═══════════════════════════════════════════════
+
+const KNOCKOUT = {
+  r32: {
+    name: '32強',
+    matches: [
+      { id:'r32-1',  home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'1A vs 2C/2D' },
+      { id:'r32-2',  home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'2A vs 2B' },
+      { id:'r32-3',  home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'1B vs 3A/C/D' },
+      { id:'r32-4',  home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'1C vs 3D/E/F' },
+      { id:'r32-5',  home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'1D vs 3E/F/G' },
+      { id:'r32-6',  home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'1E vs 3F/G/H' },
+      { id:'r32-7',  home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'1F vs 3G/H/I' },
+      { id:'r32-8',  home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'1G vs 3H/I/J' },
+      { id:'r32-9',  home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'1H vs 3I/J/K' },
+      { id:'r32-10', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'1I vs 3J/K/L' },
+      { id:'r32-11', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'1J vs 3K/L/A' },
+      { id:'r32-12', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'1K vs 3L/A/B' },
+      { id:'r32-13', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'1L vs 3A/B/C' },
+      { id:'r32-14', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'2C vs 2D' },
+      { id:'r32-15', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'2E vs 2F' },
+      { id:'r32-16', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'32強賽事，晉級後更新'},
+        bracket:'2G vs 2H' },
+    ]
+  },
+  r16: {
+    name: '16強',
+    matches: [
+      { id:'r16-1', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'16強賽事'} },
+      { id:'r16-2', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'16強賽事'} },
+      { id:'r16-3', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'16強賽事'} },
+      { id:'r16-4', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'16強賽事'} },
+      { id:'r16-5', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'16強賽事'} },
+      { id:'r16-6', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'16強賽事'} },
+      { id:'r16-7', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'16強賽事'} },
+      { id:'r16-8', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'16強賽事'} },
+    ]
+  },
+  qf: {
+    name: '8強',
+    matches: [
+      { id:'qf-1', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'8強賽事'} },
+      { id:'qf-2', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'8強賽事'} },
+      { id:'qf-3', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'8強賽事'} },
+      { id:'qf-4', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'8強賽事'} },
+    ]
+  },
+  sf: {
+    name: '4強',
+    matches: [
+      { id:'sf-1', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'4強賽事'} },
+      { id:'sf-2', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'4強賽事'} },
+    ]
+  },
+  final: {
+    name: '決賽及季軍戰',
+    matches: [
+      { id:'3rd', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'季軍戰'} },
+      { id:'final', home:'待定', away:'待定', date:'待定', pred:{result:'H',score:'2-1',conf:50,analysis:'決賽'} },
+    ]
+  }
+};
+
+// ═══════════════════════════════════════════════
+//  APP
+// ═══════════════════════════════════════════════
+const STORAGE_KEY = 'wc2026_v2';
+
+function loadResults() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY))||{}; } catch(e) { return {}; } }
+function saveResults(r) { localStorage.setItem(STORAGE_KEY, JSON.stringify(r)); }
+
+function getAllMatches() {
+  const all = [];
+  Object.values(GROUPS).forEach(grp => grp.forEach(m => all.push({...m, round:'group'})));
+  Object.entries(KNOCKOUT).forEach(([k, r]) => r.matches.forEach(m => all.push({...m, round:k, group:k.toUpperCase()})));
+  return all;
+}
+const ALL_MATCHES = getAllMatches();
+
+function getResult(id) { return loadResults()[id] || null; }
+function setResult(id, data) {
+  const r = loadResults();
+  r[id] = {...data, updatedAt: new Date().toISOString()};
+  saveResults(r);
+  render();
+}
+
+function isCompleted(m) {
+  if (!m.date || m.date==='待定') return false;
+  const [y,mo,d] = m.date.split('-');
+  const [hh,mm] = (m.time||'00:00').split(':');
+  return new Date() > new Date(+y, +mo-1, +d, +hh, +mm, 0) + 120*60000;
+}
+
+function evalPred(pred, h, a) {
+  if (!pred||!pred.result) return null;
+  if (h===null||h===undefined||a===null||a===undefined) return null;
+  const act = h>a?'H':h<a?'A':'D';
+  return pred.result===act;
+}
+
+// ═══════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════
+let currentTab = 'groups';
+
+function render() {
+  const results = loadResults();
+  const tab = currentTab;
+  const group = document.getElementById('groupFilter')?.value||'all';
+  const search = (document.getElementById('searchInput')?.value||'').toLowerCase();
+
+  const area = document.getElementById('contentArea');
+
+  // Stats
+  const all = ALL_MATCHES;
+  let predicted=0, correct=0, wrong=0;
+  all.forEach(m => {
+    const r = getResult(m.id);
+    if (r && r.h!==null && r.h!==undefined) {
+      predicted++;
+      const c = evalPred(m.pred, r.h, r.a);
+      if (c===true) correct++;
+      else if (c===false) wrong++;
+    }
+  });
+  document.getElementById('totalMatches').textContent = all.length;
+  document.getElementById('predictedCount').textContent = predicted;
+  document.getElementById('correctCount').textContent = correct;
+  document.getElementById('wrongCount').textContent = wrong;
+  document.getElementById('accuracyPct').textContent = predicted>0?Math.round(correct/predicted*100)+'%':'0%';
+
+  // Hide filter for non-group tabs
+  document.getElementById('filterBar').style.display = tab==='groups'?'flex':'none';
+
+  if (tab === 'groups') renderGroups(area, results, group, search);
+  else if (tab === 'review') renderReview(area, results);
+  else renderKnockout(area, results, tab);
+}
+
+function renderGroups(area, results, groupFilter, search) {
+  let html = '<div class="match-grid">';
+  Object.entries(GROUPS).forEach(([g, ms]) => {
+    if (groupFilter!=='all' && g!==groupFilter) return;
+    ms.forEach(m => {
+      const r = getResult(m.id);
+      const comp = isCompleted(m);
+      const hasScore = r && r.h!==null && r.h!==undefined;
+      const isLive = !comp && m.date!=='待定' && (()=>{const n=new Date();const[y,mo,d]=m.date.split('-');const[t]=m.time.split(':');const s=new Date(+y,+mo-1,+d,+t,0);const e=new Date(s.getTime()+120*60000);return n>=s&&n<=e;})();
+      if (search && !m.home.includes(search) && !m.away.includes(search)) return;
+
+      const homeScore = hasScore?r.h:'';
+      const awayScore = hasScore?r.a:'';
+      let predEval='⏳ 待賽', predClass='pred-pending';
+      if (hasScore) {
+        const c = evalPred(m.pred, r.h, r.a);
+        if (c===true) { predEval='✓ 正確'; predClass='pred-correct'; }
+        else if (c===false) { predEval='✗ 錯誤'; predClass='pred-wrong'; }
+      } else if (comp) { predEval='⏳ 待輸入賽果'; }
+
+      const hRank = RANKINGS[m.home]?'#'+RANKINGS[m.home]:'';
+      const aRank = RANKINGS[m.away]?'#'+RANKINGS[m.away]:'';
+
+      html += `<div class="match-card ${comp&&hasScore?'completed':''} ${isLive?'live':''}">
+        <div class="match-header">
+          <div><span class="group-tag">${g}組</span></div>
+          <div style="display:flex;align-items:center;gap:0.35rem;">
+            <span>${m.date!=='待定'?m.date.replace(/-/g,'/'):'待定'} ${m.time}</span>
+            <span class="status ${isLive?'status-live':comp?'status-completed':'status-pending'}">${isLive?'●進行中':comp?'已完場':'未賽'}</span>
+          </div>
+        </div>
+        <div class="match-body">
+          <div class="teams">
+            <div class="team home">${m.home} <span class="rank">${hRank}</span></div>
+            <div class="vs">VS</div>
+            <div class="team away"><span class="rank">${aRank}</span> ${m.away}</div>
+          </div>
+          <div style="text-align:center;">
+            ${hasScore?`<div class="score-display">${homeScore} <span style="color:var(--text2)">-</span> ${awayScore}</div>`
+            :(comp?`<div class="score-input-group">
+              <input type="number" id="hs_${m.id}" class="si" min="0" max="20" value="">
+              <span style="font-weight:600;">-</span>
+              <input type="number" id="as_${m.id}" class="si" min="0" max="20" value="">
+              <button class="btn btn-primary btn-sm" onclick="submitScore('${m.id}')">✓</button>
+            </div>`:`<div class="score-display"><span style="color:var(--text2);font-weight:400;">?</span> <span style="color:var(--text2)">-</span> <span style="color:var(--text2);font-weight:400;">?</span></div>`)}
+          </div>`;
+
+      // Odds row
+      if (m.odds_h) {
+        const min = Math.min(m.odds_h, m.odds_d, m.odds_a);
+        html += `<div class="odds-row">
+          <div class="odd-box home-box ${min===m.odds_h?'highlight':''}"><div class="label">主</div><div class="value">${m.odds_h.toFixed(2)}</div></div>
+          <div class="odd-box draw-box ${min===m.odds_d?'highlight':''}"><div class="label">和</div><div class="value">${m.odds_d.toFixed(2)}</div></div>
+          <div class="odd-box away-box ${min===m.odds_a?'highlight':''}"><div class="label">客</div><div class="value">${m.odds_a.toFixed(2)}</div></div>
+        </div>
+        <div class="odds-source">足智彩賠率 ${m.over_under?`• 大細[${m.over_under[0]}] 大${m.over_under[1]} 細${m.over_under[2]}`:''}</div>`;
+      }
+
+      // Prediction
+      const pred = m.prediction || m.pred;
+      if (pred && pred.result) {
+        const rMap = {H:'🏠 主勝', D:'🤝 和局', A:'✈️ 客勝'};
+        html += `<div class="pred-box">
+          <div class="pred-title"><span>🎯 預測</span><span>信心 ${pred.confidence||50}%</span></div>
+          <div class="pred-text">${rMap[pred.result]} ${pred.score} — ${pred.analysis||''}</div>`;
+
+        // Show rank & form data
+        if (m._raw) {
+          html += `<div class="pred-data">
+            <span class="tag">${m._raw.rankAnalysis||''}</span>
+            <span class="tag">${m._raw.formAnalysis||''}</span>
+          </div>`;
+        }
+        html += `<div class="pred-result"><span class="${predClass}">${predEval}</span></div>`;
+      }
+      html += '</div>';
+
+      // Review box if completed
+      if (hasScore) {
+        const reviewText = r.review||'';
+        html += `<div class="review-box">
+          <textarea id="rev_${m.id}" placeholder="自我檢討（如預測正確/錯誤的原因）..." onchange="saveReview('${m.id}')">${reviewText}</textarea>
+          <div style="display:flex;gap:0.35rem;margin-top:0.3rem;">
+            <button class="btn btn-sm btn-primary" onclick="saveReview('${m.id}')">💾 儲存</button>
+            <button class="btn btn-sm btn-danger" onclick="clearResult('${m.id}')">🗑️ 清除</button>
+            <button class="btn btn-sm btn-green" onclick="autoVerifyMatch('${m.id}')">🌐 自動核對</button>
+          </div>
+        </div>`;
+      } else if (comp) {
+        html += `<div style="text-align:center;margin-top:0.35rem;"><button class="btn btn-sm btn-primary" onclick="showInput('${m.id}')">📝 輸入賽果</button>
+        <button class="btn btn-sm btn-green" onclick="autoVerifyMatch('${m.id}')" style="margin-left:0.25rem;">🌐 自動核對</button></div>`;
+      }
+
+      html += '</div></div>';
+    });
+  });
+  html += '</div>';
+  area.innerHTML = html;
+
+  // Pre-fill score inputs
+  Object.entries(GROUPS).forEach(([,ms]) => ms.forEach(m => {
+    const r = getResult(m.id);
+    if (r && r.h!==null) {
+      const hi = document.getElementById('hs_'+m.id);
+      const ai = document.getElementById('as_'+m.id);
+      if (hi) hi.value = r.h;
+      if (ai) ai.value = r.a;
+    }
+  }));
+}
+
+function renderKnockout(area, results, round) {
+  const data = KNOCKOUT[round];
+  if (!data) { area.innerHTML = '<p style="color:var(--text2);text-align:center;padding:2rem;">無數據</p>'; return; }
+  let html = `<div class="knockout-section"><h3>🏆 ${data.name} (${data.matches.length}場)</h3>`;
+  data.matches.forEach(m => {
+    const r = getResult(m.id);
+    const hasScore = r && r.h!==null;
+    const tbd = m.home==='待定';
+    html += `<div class="ko-match">
+      <div class="km-team ${tbd?'tbd':''}">${tbd?(m.bracket||'待定'):m.home}</div>
+      <div class="km-vs">VS</div>
+      <div class="km-team ${tbd?'tbd':''}" style="text-align:right;">${tbd?'待定':m.away}</div>
+      <div class="km-score">${hasScore?r.h+'-'+r.a:'?'}</div>
+    </div>`;
+  });
+  html += '</div>';
+
+  // Add bracket view
+  if (round==='r32') {
+    // Show bracket structure reference
+    html += '<div class="knockout-section" style="margin-top:0.5rem;"><h3>📋 晉級路徑（小組→32強）</h3>';
+    html += '<p style="color:var(--text2);font-size:0.78rem;">12組首名 + 8支最佳第三名 → 32強<br>';
+    html += '小組首名對應特定小組的第三名配對，詳見FIFA賽程</p></div>';
+  }
+  if (round==='final') {
+    html += '<div class="knockout-section" style="margin-top:0.5rem;text-align:center;">';
+    html += '<h3>🏆 2026 世界盃冠軍將在此誕生</h3>';
+    html += '<p style="color:var(--text2);font-size:0.85rem;">日期: 2026年7月19日 • 場地: 大都會人壽體育場（紐約/新澤西）</p></div>';
+  }
+  area.innerHTML = html;
+}
+
+function renderReview(area, results) {
+  const summary = document.getElementById('reviewSummary');
+  let correct=0, wrong=0, total=0, autoCount=0;
+  const items = [];
+
+  ALL_MATCHES.forEach(m => {
+    const r = getResult(m.id);
+    if (!r || r.h===null) return;
+    total++;
+    const c = evalPred(m.pred, r.h, r.a);
+    if (c===true) correct++;
+    else if (c===false) wrong++;
+    if (r.auto) autoCount++;
+    items.push({m, r, c, score: r.h+'-'+r.a});
+  });
+
+  if (total===0) {
+    area.innerHTML = '<p style="color:var(--text2);text-align:center;padding:2rem;">尚未有賽事完結並記錄賽果。</p>';
+    summary.classList.remove('visible');
+    return;
+  }
+
+  summary.classList.add('visible');
+  document.getElementById('rsCorrect').textContent = correct;
+  document.getElementById('rsWrong').textContent = wrong;
+  document.getElementById('rsAccuracy').textContent = Math.round(correct/total*100)+'%';
+  document.getElementById('rsAuto').textContent = autoCount;
+
+  let html = '<div class="review-match-list">';
+  items.forEach(({m, r, c, score}) => {
+    const predRes = m.pred?.result?{H:'主勝',D:'和局',A:'客勝'}[m.pred.result]:'無';
+    html += `<div class="ko-match" style="grid-template-columns:1fr auto auto auto;">
+      <div>${m.home} ${score} ${m.away}</div>
+      <div style="color:${c===true?'var(--accent2)':c===false?'var(--red)':'var(--text2)'}">${c===true?'✓正確':c===false?'✗錯誤':'—'}</div>
+      <div style="color:var(--text2);font-size:0.7rem;">預測:${predRes}${m.pred?.score||''}</div>
+      <div style="font-size:0.7rem;color:var(--text2);">${r.auto?'🤖自動':'✍️手動'}${m.group?'| '+m.group+'組':''}</div>
+    </div>`;
+  });
+  html += '</div>';
+  area.innerHTML = '<div style="margin-top:0.5rem;">'+html+'</div>';
+}
+
+// ═══════════════════════════════════════════════
+//  ACTIONS
+// ═══════════════════════════════════════════════
+function submitScore(id) {
+  const hs = parseInt(document.getElementById('hs_'+id)?.value);
+  const as = parseInt(document.getElementById('as_'+id)?.value);
+  if (isNaN(hs)||isNaN(as)) { alert('請輸入有效比數'); return; }
+  const r = getResult(id)||{};
+  r.h = hs; r.a = as;
+  setResult(id, r);
+}
+
+function showInput(id) {
+  const card = document.querySelector(`.match-card:has([onclick*="'${id}'"])`);
+  const body = card?.querySelector('.match-body');
+  if (body) {
+    const div = document.createElement('div');
+    div.style.cssText = 'text-align:center;margin:0.35rem 0;';
+    div.innerHTML = `<div class="score-input-group">
+      <input type="number" id="hs_${id}" class="si" min="0" max="20" placeholder="?" style="width:40px;">
+      <span style="font-weight:600;">-</span>
+      <input type="number" id="as_${id}" class="si" min="0" max="20" placeholder="?" style="width:40px;">
+      <button class="btn btn-primary btn-sm" onclick="submitScore('${id}')">✓</button>
+    </div>`;
+    body.appendChild(div);
+    document.getElementById('hs_'+id)?.focus();
+  }
+}
+
+function saveReview(id) {
+  const ta = document.getElementById('rev_'+id);
+  if (!ta) return;
+  const r = getResult(id)||{};
+  r.review = ta.value;
+  setResult(id, r);
+}
+
+function clearResult(id) {
+  if (!confirm('清除賽果？')) return;
+  const r = getResult(id);
+  if (r) { r.h=null; r.a=null; r.review=''; r.auto=false; setResult(id, r); }
+}
+
+function resetAll() {
+  localStorage.removeItem(STORAGE_KEY);
+  render();
+}
+
+// ═══════════════════════════════════════════════
+//  AUTO VERIFY — Fetch results from Wikipedia
+// ═══════════════════════════════════════════════
+async function autoVerifyMatch(id) {
+  const m = ALL_MATCHES.find(x => x.id===id);
+  if (!m) return;
+  if (m.date==='待定') { alert('賽程未定，無法核對'); return; }
+
+  const [y,mo,d] = m.date.split('-');
+  const dateStr = `${y}-${mo}-${d}`;
+  const homeEn = teamToEnglish(m.home);
+  const awayEn = teamToEnglish(m.away);
+
+  showModal(`🌐 正在自動核對 ${m.home} vs ${m.away}...`,
+    `<div class="log-line info"><span class="time">搜尋</span><span class="msg">正在查詢維基百科...</span></div>
+    <div class="loading" style="margin:1rem auto;"></div>`);
+
+  try {
+    // Search Wikipedia for the match
+    const query = `${dateStr.replace(/-/g,' ')} FIFA World Cup ${homeEn} ${awayEn}`;
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
+    const searchResp = await fetch(searchUrl);
+    const searchData = await searchResp.json();
+
+    const pageTitle = searchData?.query?.search?.[0]?.title;
+    if (!pageTitle) {
+      updateModal('log', `<div class="log-line err"><span class="time">結果</span><span class="msg">❌ 未能找到賽果，請手動輸入</span></div>`);
+      return;
+    }
+
+    // Get page content
+    const contentUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles=${encodeURIComponent(pageTitle)}&format=json&origin=*`;
+    const contentResp = await fetch(contentUrl);
+    const contentData = await contentResp.json();
+    const pages = contentData?.query?.pages || {};
+    const text = Object.values(pages)[0]?.extract || '';
+
+    if (!text) {
+      updateModal('log', `<div class="log-line err"><span class="time">結果</span><span class="msg">❌ 找不到內容</span></div>`);
+      return;
+    }
+
+    // Try to extract score (pattern: "Team A 1–0 Team B" or "Team A 1-0 Team B")
+    const patterns = [
+      new RegExp(`${escapeRegex(homeEn)}\\s+(\\d+)[–-](\\d+)\\s+${escapeRegex(awayEn)}`, 'i'),
+      new RegExp(`${escapeRegex(awayEn)}\\s+(\\d+)[–-](\\d+)\\s+${escapeRegex(homeEn)}`, 'i'),
+      new RegExp(`(\\d+)[–-](\\d+)\\s+${escapeRegex(awayEn)}`, 'i'),
+    ];
+
+    let score1 = null, score2 = null;
+    for (const p of patterns) {
+      const match = text.match(p);
+      if (match) {
+        if (match[0].includes(homeEn) && match.index < text.indexOf(awayEn)) {
+          score1 = parseInt(match[1]); score2 = parseInt(match[2]);
+        } else if (match[0].includes(awayEn) && match.index < text.indexOf(homeEn)) {
+          score1 = parseInt(match[2]); score2 = parseInt(match[1]);
+        } else {
+          score1 = parseInt(match[1]); score2 = parseInt(match[2]);
+        }
+        break;
+      }
+    }
+
+    if (score1 !== null && score2 !== null) {
+      const r = getResult(id)||{};
+      r.h = score1; r.a = score2; r.auto = true; r.autoTime = new Date().toISOString();
+      setResult(id, r);
+      updateModal('log', `<div class="log-line ok"><span class="time">✅ 結果</span><span class="msg">${m.home} ${score1}-${score2} ${m.away}（自動核對成功）</span></div>`);
+
+      // Generate auto review
+      const c = evalPred(m.pred, score1, score2);
+      let review = c===true?'✅ 預測正確！':'❌ 預測錯誤。';
+      if (m.pred && m.pred.score) {
+        const predScore = m.pred.score.split('-');
+        review += ` 預測比數${m.pred.score}，實際${score1}-${score2}。`;
+        if (parseInt(predScore[0])===score1 && parseInt(predScore[1])===score2) review += ' 比數完全命中！';
+      }
+      const rr = getResult(id)||{};
+      rr.review = review;
+      setResult(id, rr);
+      setTimeout(() => closeModal(), 2000);
+    } else {
+      updateModal('log', `<div class="log-line err"><span class="time">結果</span><span class="msg">⚠️ 找到頁面但無法提取比數，請手動輸入</span></div>`);
+    }
+  } catch(e) {
+    updateModal('log', `<div class="log-line err"><span class="time">錯誤</span><span class="msg">${e.message}</span></div>`);
+  }
+}
+
+async function autoVerifyAll() {
+  showModal('🌐 自動核對所有已完場賽事', '<div class="loading" style="margin:1rem auto;"></div>');
+
+  let total = 0, success = 0, fail = 0;
+  const completed = ALL_MATCHES.filter(m => isCompleted(m) && m.date!=='待定');
+
+  for (const m of completed) {
+    total++;
+    updateModal('log', `<div class="log-line info"><span class="time">[${total}/${completed.length}]</span><span class="msg">${m.home} vs ${m.away}...</span></div>`);
+
+    const [y,mo,d] = m.date.split('-');
+    const dateStr = `${y}-${mo}-${d}`;
+    const homeEn = teamToEnglish(m.home);
+    const awayEn = teamToEnglish(m.away);
+
+    try {
+      const query = `${dateStr} FIFA World Cup ${homeEn} ${awayEn}`;
+      const resp = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`);
+      const data = await resp.json();
+      const pageTitle = data?.query?.search?.[0]?.title;
+      if (!pageTitle) { fail++; continue; }
+
+      const cResp = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles=${encodeURIComponent(pageTitle)}&format=json&origin=*`);
+      const cData = await cResp.json();
+      const text = Object.values(cData?.query?.pages||{})[0]?.extract||'';
+
+      const pat = new RegExp(`${escapeRegex(homeEn)}\\s+(\\d+)[–-](\\d+)\\s+${escapeRegex(awayEn)}`, 'i');
+      const match = text.match(pat);
+      if (match) {
+        const s1 = parseInt(match[1]), s2 = parseInt(match[2]);
+        const r = getResult(m.id)||{};
+        r.h = s1; r.a = s2; r.auto = true;
+        setResult(m.id, r);
+        success++;
+        const c = evalPred(m.pred, s1, s2);
+        const review = c?'✅ 預測正確！':'❌ 預測錯誤。';
+        rr = getResult(m.id)||{};
+        rr.review = review;
+        setResult(m.id, rr);
+      } else { fail++; }
+    } catch(e) { fail++; }
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  updateModal('title', `🌐 核對完成 (${success}/${total} 成功)`);
+  updateModal('log', `<div class="log-line ok"><span class="time">完成</span><span class="msg">✅ ${success} 場自動核對成功，${fail} 場失敗</span></div>`);
+  setTimeout(() => { closeModal(); render(); }, 2000);
+}
+
+// ═══════════════════════════════════════════════
+//  EXCEL EXPORT
+// ═══════════════════════════════════════════════
+function exportExcel() {
+  const results = loadResults();
+  const rows = [['賽事ID','組別','階段','日期','時間','主隊','客隊','主隊排名','客隊排名',
+    '主隊近10場','客隊近10場','主勝賠率','和局賠率','客勝賠率','預測結果','預測比數','預測信心%',
+    '實際主隊入球','實際客隊入球','預測正確?','自動核對?','檢討']];
+
+  ALL_MATCHES.forEach(m => {
+    const r = getResult(m.id);
+    const pred = m.prediction||m.pred||{};
+    const hForm = FORM[m.home]||[];
+    const aForm = FORM[m.away]||[];
+    const rMap = {H:'主勝',D:'和局',A:'客勝'};
+
+    rows.push([
+      m.id, m.group||m.round, m.round||'group',
+      m.date, m.time, m.home, m.away,
+      RANKINGS[m.home]||'', RANKINGS[m.away]||'',
+      hForm.length?`${hForm[0]}W${hForm[1]}D${hForm[2]}L`:'',
+      aForm.length?`${aForm[0]}W${aForm[1]}D${aForm[2]}L`:'',
+      m.odds_h||'', m.odds_d||'', m.odds_a||'',
+      rMap[pred.result]||'', pred.score||'', pred.confidence||'',
+      r?.h??'', r?.a??'',
+      r&&r.h!==null?evalPred(pred, r.h, r.a)===true?'✓正確':evalPred(pred, r.h, r.a)===false?'✗錯誤':'待評':'',
+      r?.auto?'是':'否',
+      r?.review||''
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = rows[0].map(() => ({wch:12}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '世界盃分析');
+  XLSX.writeFile(wb, `WC2026_分析_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+// ═══════════════════════════════════════════════
+//  REPORT
+// ═══════════════════════════════════════════════
+function generateReport() {
+  const results = loadResults();
+  let correct=0, wrong=0, total=0;
+  const details = [];
+  ALL_MATCHES.forEach(m => {
+    const r = getResult(m.id);
+    if (!r || r.h===null) return;
+    total++;
+    const c = evalPred(m.pred, r.h, r.a);
+    if (c===true) correct++; else if (c===false) wrong++;
+    const rMap = {H:'主勝',D:'和局',A:'客勝'};
+    details.push({
+      match: `${m.home} ${r.h}-${r.a} ${m.away}`,
+      pred: (m.pred?.result?rMap[m.pred.result]+' '+m.pred.score:'無'),
+      actual: r.h>r.a?'主勝':r.h<r.a?'客勝':'和局',
+      correct: c,
+      review: r.review||'',
+      auto: r.auto?'🤖':'✍️'
+    });
+  });
+
+  let report = '═══════════════════════════════════════════\n';
+  report += '  2026世界盃 — 預測檢討報告\n';
+  report += `  生成: ${new Date().toLocaleString('zh-HK')}\n`;
+  report += '═══════════════════════════════════════════\n\n';
+  report += `📊 整體: ${total}場完場 | ✓${correct} | ✗${wrong} | 準確率${total>0?Math.round(correct/total*100):0}%\n\n`;
+  report += '───────────────────────────────────────\n';
+  report += '  逐場檢討\n';
+  report += '───────────────────────────────────────\n\n';
+
+  details.forEach((d,i) => {
+    report += `  ${i+1}. ${d.match}\n`;
+    report += `     預測:${d.pred} 賽果:${d.actual} ${d.auto} ${d.correct===true?'✓':d.correct===false?'✗':'—'}\n`;
+    if (d.review) report += `     檢討:${d.review}\n`;
+    report += '\n';
+  });
+
+  report += '═══════════════════════════════════════════\n';
+  report += '  賠率:香港賽馬會足智彩 football.hkjc.com\n';
+  report += '  排名:FIFA Rankings | 近況:近10場\n';
+  report += '═══════════════════════════════════════════\n';
+
+  const out = document.getElementById('reportOutput');
+  out.textContent = report;
+  out.style.display = 'block';
+}
+
+// ═══════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════
+function teamToEnglish(name) {
+  const map = {
+    '阿根廷':'Argentina','法國':'France','巴西':'Brazil','比利時':'Belgium','英格蘭':'England',
+    '葡萄牙':'Portugal','西班牙':'Spain','荷蘭':'Netherlands','德國':'Germany','克羅地亞':'Croatia',
+    '墨西哥':'Mexico','美國':'United States','哥倫比亞':'Colombia','烏拉圭':'Uruguay','摩洛哥':'Morocco',
+    '日本':'Japan','瑞士':'Switzerland','瑞典':'Sweden','塞內加爾':'Senegal','伊朗':'Iran',
+    '南韓':'South Korea','澳洲':'Australia','土耳其':'Turkey','挪威':'Norway','厄瓜多爾':'Ecuador',
+    '沙特阿拉伯':'Saudi Arabia','捷克':'Czech Republic','加拿大':'Canada','埃及':'Egypt','巴拉圭':'Paraguay',
+    '科特迪瓦':'Ivory Coast','蘇格蘭':'Scotland','突尼西亞':'Tunisia','阿爾及利亞':'Algeria','奧地利':'Austria',
+    '卡塔爾':'Qatar','加納':'Ghana','波斯尼亞':'Bosnia','伊拉克':'Iraq','維德角':'Cape Verde',
+    '約旦':'Jordan','南非':'South Africa','海地':'Haiti','紐西蘭':'New Zealand','巴拿馬':'Panama',
+    '剛果民主':'DR Congo','烏茲別克':'Uzbekistan','庫拉索':'Curacao'
+  };
+  return map[name]||name;
+}
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Modal
+function showModal(title, content) {
+  const overlay = document.getElementById('modalOverlay');
+  document.getElementById('modalContent').innerHTML = `<h3 id="modalTitle">${title}</h3><div id="modalLog">${content}</div>`;
+  overlay.classList.add('visible');
+}
+function updateModal(type, html) {
+  const log = document.getElementById('modalLog');
+  if (type==='title') {
+    document.getElementById('modalTitle').textContent = html;
+  } else if (log) {
+    log.insertAdjacentHTML('beforeend', html);
+    log.scrollTop = log.scrollHeight;
+  }
+}
+function closeModal() { document.getElementById('modalOverlay').classList.remove('visible'); }
+document.getElementById('modalOverlay').addEventListener('click', e => { if (e.target===e.currentTarget) closeModal(); });
+
+// ═══════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  render();
+
+  // Tab switching
+  document.getElementById('mainTabs').addEventListener('click', e => {
+    const btn = e.target.closest('.nav-tab');
+    if (!btn) return;
+    document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentTab = btn.dataset.tab;
+    render();
+  });
+
+  document.getElementById('groupFilter').addEventListener('change', render);
+  document.getElementById('searchInput').addEventListener('input', render);
+});
+</script>
+</body>
+</html>
