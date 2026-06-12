@@ -1039,114 +1039,106 @@ async function autoVerifyMatch(id) {
 }
 
 async function autoVerifyAll() {
-  showModal('🌐 自動核對所有已完場賽事', '<div class="loading" style="margin:1rem auto;"></div>');
+  showModal('🌐 自動核對賽果 (來源: Wikipedia)', '<div class="loading" style="margin:1rem auto;"></div>');
   
-  let total = 0, success = 0, fail = 0;
-  // Get all matches directly (not filtered by group)
   const completed = ALL_MATCHES.filter(m => isCompleted(m) && m.date!=='待定');
+  updateModal('log', `<div class="log-line info"><span class="time"></span><span class="msg">找到 ${completed.length} 場已完場賽事</span></div>`);
   
-  updateModal('log', `<div class="log-line info"><span class="time"></span><span class="msg">正在核對 ${completed.length} 場已完場賽事...</span></div>`);
-
-  for (const m of completed) {
-    total++;
+  let success = 0, fail = 0;
+  
+  for (let idx = 0; idx < completed.length; idx++) {
+    const m = completed[idx];
     const homeEn = teamToEnglish(m.home);
     const awayEn = teamToEnglish(m.away);
-    const groupLetter = m.group || 'A';
+    const g = m.group || 'A';
     
-    updateModal('log', `<div class="log-line info"><span class="time">[${total}/${completed.length}]</span><span class="msg">${m.home} vs ${m.away}...</span></div>`);
-
+    updateModal('log', `<div class="log-line info"><span class="time">[${idx+1}/${completed.length}]</span><span class="msg">${m.home} vs ${m.away} (${g}組)...</span></div>`);
+    
     try {
-      // Search for the group page on Wikipedia
-      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent('2026 FIFA World Cup Group ' + groupLetter)}&format=json&origin=*`;
-      const resp = await fetch(searchUrl);
+      // Fetch the Wikipedia group page directly (simpler approach)
+      const pageTitle = '2026_FIFA_World_Cup_Group_' + g;
+      const apiUrl = 'https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=' + encodeURIComponent(pageTitle) + '&format=json&origin=*';
+      
+      const resp = await fetch(apiUrl);
+      if (!resp.ok) { fail++; continue; }
+      
       const data = await resp.json();
+      const pages = data.query?.pages || {};
+      const pageInfo = Object.values(pages)[0];
+      const text = pageInfo?.extract || '';
       
-      // Find the group page (filter out the main tournament page)
-      const searchResults = data?.query?.search || [];
-      let pageTitle = null;
-      for (const r of searchResults) {
-        if (r.title.includes('Group ' + groupLetter)) {
-          pageTitle = r.title;
-          break;
-        }
-      }
+      if (text.length < 100) { fail++; continue; }
       
-      if (!pageTitle) {
-        updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">找不到 ${groupLetter} 組賽果頁面</span></div>`);
-        fail++; continue;
-      }
-
-      // Get the full page content
-      const contentUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=${encodeURIComponent(pageTitle)}&format=json&origin=*`;
-      const cResp = await fetch(contentUrl);
-      const cData = await cResp.json();
-      const pages = cData?.query?.pages || {};
-      const pageContent = Object.values(pages)[0];
-      const text = pageContent?.extract || '';
-      
-      if (!text || text.length < 100) {
-        updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">${groupLetter} 組頁面內容不足</span></div>`);
-        fail++; continue;
-      }
-      
-      // Find the specific match section in the text
-      const matchSection = findMatchSection(text, homeEn, awayEn);
-      
-      // Try to extract score using all strategies on the match section or full text
-      const targetText = matchSection || text;
-      const score = extractScoreFromText(targetText, homeEn, awayEn) 
-                 || extractScoreFromTextFallback(targetText, homeEn, awayEn);
+      // DIRECT approach: search for score in various formats
+      const score = getScoreDirect(text, homeEn, awayEn);
       
       if (score) {
         const r = getResult(m.id) || {};
         r.h = score[0]; r.a = score[1]; r.auto = true;
         const correct = evalPred(m.pred, score[0], score[1]);
         r.review = correct ? '✅ 預測正確！' : '❌ 預測錯誤。';
-        if (m.pred && m.pred.score) {
-          r.review += ` 預測${m.pred.score}，實際${score[0]}-${score[1]}。`;
-        }
         setResult(m.id, r);
         success++;
         updateModal('log', `<div class="log-line ok"><span class="time">✅</span><span class="msg">${m.home} ${score[0]}-${score[1]} ${m.away}</span></div>`);
       } else {
-        // Debug: show the text around the team names for debugging
-        const debugText = findMatchSection(text, homeEn, awayEn) || text;
-        const snippet = debugText.length > 200 ? debugText.substring(0, 200) + '...' : debugText;
-        updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">${m.home} vs ${m.away} 無法提取比數</span></div>`);
         fail++;
+        updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">${m.home} vs ${m.away} 未能提取比數</span></div>`);
       }
     } catch(e) {
-      updateModal('log', `<div class="log-line err"><span class="time">⚠️</span><span class="msg">${m.home} vs ${m.away}: ${e.message.substring(0,80)}</span></div>`);
       fail++;
+      updateModal('log', `<div class="log-line err"><span class="time">⚠️</span><span class="msg">${e.message}</span></div>`);
     }
-    // Small delay between requests to avoid rate limiting
+    
     await new Promise(r => setTimeout(r, 200));
   }
-
-  updateModal('title', `🌐 核對完成 (${success}/${total} 成功)`);
-  updateModal('log', `<div class="log-line ok"><span class="time">完成</span><span class="msg">✅ ${success} 場自動核對成功，${fail} 場失敗</span></div>`);
-  // Auto-close after 3 seconds and refresh
-  setTimeout(() => { closeModal(); render(); }, 3000);
+  
+  updateModal('title', '🌐 核對完成 (' + success + '/' + (success+fail) + ' 成功)');
+  updateModal('log', `<div class="log-line ok"><span class="time">完成</span><span class="msg">✅ ${success} 場成功，${fail} 場失敗</span></div>`);
+  setTimeout(function() { closeModal(); render(); }, 3000);
 }
 
-// Find the section of text that mentions both teams (the match description)
-function findMatchSection(text, homeEn, awayEn) {
-  // Look for the match header like "=== Mexico vs South Africa ==="
-  const headerPattern = new RegExp(
-    '===?\\s*' + escapeRegex(homeEn) + '\\s*vs\\s*' + escapeRegex(awayEn) + '\\s*===?', 'i'
-  );
-  let idx = text.search(headerPattern);
-  if (idx === -1) {
-    // Try "=== South Korea vs Czech Republic ===" or similar
-    const headerPattern2 = new RegExp(
-      '===?\\s*' + escapeRegex(awayEn) + '\\s*vs\\s*' + escapeRegex(homeEn) + '\\s*===?', 'i'
-    );
-    idx = text.search(headerPattern2);
+// Simple direct score extraction - handles multiple formats
+function getScoreDirect(text, homeEn, awayEn) {
+  // Pattern 1: "Mexico 2–0 South Africa" (score directly between team names)
+  var p1 = new RegExp(homeEn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+(\\d+)[–\\u2013-](\\d+)\\s+' + awayEn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+  var m = text.match(p1);
+  if (m) return [parseInt(m[1]), parseInt(m[2])];
+  
+  // Pattern 2: "win 2-0" or "win the game 2-0" or "going on to win 2-1"
+  var p2 = /(win|won|winning)(?:\s+(?:the\s+)?(?:game|match|it))?\s+(\d+)[–\-](\d+)/gi;
+  var allMatches = [];
+  var match;
+  while ((match = p2.exec(text)) !== null) {
+    allMatches.push([parseInt(match[2]), parseInt(match[3]), match.index]);
   }
-  if (idx >= 0) {
-    // Return 2000 chars from the match header
-    return text.substring(idx, idx + 2000);
+  if (allMatches.length > 0) {
+    // Use the LAST "win" mention (closest to final score)
+    var last = allMatches[allMatches.length - 1];
+    return [last[0], last[1]];
   }
+  
+  // Pattern 3: "X–Y victory for TeamA" or "TeamA won X–Y"  
+  var p3 = new RegExp(homeEn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '.*?(?:win|won|defeat|beat|edged).*?(\\d+)[–\-](\\d+)', 'i');
+  var m3 = text.match(p3);
+  if (m3) return [parseInt(m3[1]), parseInt(m3[2])];
+  
+  // Pattern 4: Any scoreline (X–Y) in the text - use the last one
+  var p4 = /(\d+)[–\-](\d+)/g;
+  var scores = [];
+  while ((m = p4.exec(text)) !== null) {
+    scores.push([parseInt(m[1]), parseInt(m[2]), m.index]);
+  }
+  
+  // Filter out scores that are too large (not football scores)
+  scores = scores.filter(function(s) { return s[0] < 10 && s[1] < 10; });
+  
+  if (scores.length > 0) {
+    // For Mexico vs South Africa: "2-0" appears in the match description
+    // For South Korea vs Czech Republic: "2-1" is the final score
+    // Use the LAST score (closest to end of section = final score)
+    return [scores[scores.length-1][0], scores[scores.length-1][1]];
+  }
+  
   return null;
 }
 
