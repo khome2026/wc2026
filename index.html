@@ -202,7 +202,7 @@
 </div>
 
 <div class="footer">
-  <p>📊 賠率及賽程: <a href="https://football.hkjc.com/zh-hk/home" target="_blank">香港賽馬會足智彩</a> • 排名: FIFA Rankings • 近況: 近10場<br>🌐 賽果自動核對: <a href="https://bet.hkjc.com/ch/football/results" target="_blank">足智彩賽果頁</a>（官方來源）<br>🎯 每場提供2個比數預測 • 賠率及賽果全部來自足智彩</p>
+  <p>📊 賠率及賽程: <a href="https://football.hkjc.com/zh-hk/home" target="_blank">香港賽馬會足智彩</a> • 排名: FIFA Rankings • 近況: 近10場<br>🌐 賽果自動核對: <a href="https://bet.hkjc.com/ch/football/results" target="_blank">足智彩賽果頁</a>（官方來源）<br>🎯 每場提供3個比數預測 + 半全場預測 • 賠率及賽果全部來自足智彩</p>
   <p style="margin-top:0.3rem;">數據存於 localStorage • 賽果可自動核對 • 支援Excel匯出</p>
 </div>
 
@@ -532,8 +532,6 @@ const GROUPS = {
 
 // ═══════════════════════════════════════════════
 //  KNOCKOUT STAGE — 2026 Format
-//  Top 2 from 12 groups + 8 best 3rd-placed = 32 teams
-// ═══════════════════════════════════════════════
 
 const KNOCKOUT = {
   r32: {
@@ -618,6 +616,66 @@ const STORAGE_KEY = 'wc2026_v2';
 
 function loadResults() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY))||{}; } catch(e) { return {}; } }
 function saveResults(r) { localStorage.setItem(STORAGE_KEY, JSON.stringify(r)); }
+
+// Enrich all matches with 3 predictions + HT/FT
+(function enrichPredictions() {
+  Object.values(GROUPS).forEach(grp => grp.forEach(m => {
+    if (!m.prediction || !m.prediction.result) return;
+    const r = m.prediction, sc = r.score || '0-0';
+    const cf = r.confidence || 50;
+    const sn = sc.split('-').map(Number);
+    const sd = Math.abs(sn[0]-sn[1]), hR = m.hRank||25, aR = m.aRank||25;
+
+    // pred2
+    if (r.result === 'H') {
+      if (sn[0]>=4) { m.prediction2={result:'H',score:''+(sn[0]-1)+'-'+sn[1],confidence:Math.max(cf-20,20)}; }
+      else if (cf>=75) { m.prediction2={result:'H',score:sn[0]>=2?'2-0':'1-0',confidence:Math.max(cf-15,25)}; }
+      else { m.prediction2={result:'D',score:sn[0]>0?''+sn[0]+'-'+sn[0]:'1-1',confidence:Math.max(cf-20,18)}; }
+    } else if (r.result === 'A') {
+      if (sn[1]>=4) { m.prediction2={result:'A',score:''+sn[0]+'-'+(sn[1]-1),confidence:Math.max(cf-20,20)}; }
+      else if (cf>=75) { m.prediction2={result:'A',score:sn[1]>=2?'0-'+(sn[1]-1):'0-1',confidence:Math.max(cf-15,25)}; }
+      else { m.prediction2={result:'D',score:sn[1]>0?''+sn[1]+'-'+sn[1]:'1-1',confidence:Math.max(cf-20,18)}; }
+    } else {
+      m.prediction2={result:'D',score:sc==='0-0'?'1-1':'0-0',confidence:Math.max(cf-10,15)};
+    }
+
+    // pred3
+    if (cf>=80 && sd>=3) {
+      m.prediction3={result:r.result,score:r.result==='H'?''+(sn[0]+1)+'-'+sn[1]:''+sn[0]+'-'+(sn[1]+1),confidence:Math.max(cf-30,15)};
+    } else if (cf>=65) {
+      if (r.result==='H') m.prediction3={result:'D',score:sn[0]>1?''+(sn[0]-1)+'-'+(sn[0]-1):'1-1',confidence:Math.max(cf-30,15)};
+      else if (r.result==='A') m.prediction3={result:'D',score:sn[1]>1?''+(sn[1]-1)+'-'+(sn[1]-1):'1-1',confidence:Math.max(cf-30,15)};
+      else m.prediction3={result:hR<aR?'H':'A',score:hR<aR?''+(sn[0]+1)+'-'+sn[1]:''+sn[0]+'-'+(sn[1]+1),confidence:Math.max(cf-25,12)};
+    } else {
+      m.prediction3={result:'D',score:'1-1',confidence:Math.max(cf-20,12)};
+    }
+
+    // HT/FT
+    var ht = 'D', ft = r.result;
+    if (cf>=80 && sd>=2) { ht = r.result==='H'?'H':'A'; ft = r.result; }
+    else if (cf>=60) { ht = sd<=1?'D':(r.result!=='D'?r.result:'D'); ft = r.result; }
+    m.htft = { half:ht, full:ft, text:'\u534a\u5168\u573a: '+ht+'/'+ft };
+  }));
+  // Also enrich knockout matches
+})();
+(function enrichKnockout() {
+  Object.values(KNOCKOUT).forEach(r => {
+    if (!r.matches) return;
+    r.matches.forEach(m => {
+      if (!m.prediction || !m.prediction.result) return;
+      const r2 = m.prediction, sc2 = r2.score || '0-0';
+      const cf2 = r2.confidence || 50;
+      const sn2 = sc2.split('-').map(Number);
+      const sd2 = Math.abs(sn2[0]-sn2[1]);
+      var ht2 = 'D', ft2 = r2.result;
+      if (cf2>=80 && sd2>=2) { ht2 = r2.result==='H'?'H':'A'; ft2 = r2.result; }
+      else if (cf2>=60) { ht2 = sd2<=1?'D':(r2.result!=='D'?r2.result:'D'); ft2 = r2.result; }
+      m.htft = { half:ht2, full:ft2, text:'\u534a\u5168\u573a: '+ht2+'/'+ft2 };
+      m.prediction2 = { result: r2.result==='H'?'D':'H', score: '1-1', confidence: Math.max(cf2-20,15) };
+      m.prediction3 = { result: r2.result, score: r2.result==='H'?'2-1':'1-2', confidence: Math.max(cf2-25,10) };
+    });
+  });
+})();
 
 function getAllMatches() {
   const all = [];
@@ -748,9 +806,11 @@ function renderGroups(area, results, groupFilter, search) {
         <div class="odds-source">足智彩賠率 ${m.over_under?`• 大細[${m.over_under[0]}] 大${m.over_under[1]} 細${m.over_under[2]}`:''}</div>`;
       }
 
-      // Prediction - Show both primary and secondary
+      // Prediction - Show 3 predictions + HT/FT
       const pred = m.prediction || m.pred;
       const pred2 = m.prediction2;
+      const pred3 = m.prediction3;
+      const htft = m.htft;
       if (pred && pred.result) {
         const rMap = {H:'🏠', D:'🤝', A:'✈️'};
         const srcLabel = m.odds_h ? '足智彩' : '綜合分析';
@@ -760,8 +820,18 @@ function renderGroups(area, results, groupFilter, search) {
 
         // Show 2nd prediction
         if (pred2 && pred2.score) {
-          html += `<div class="pred-text" style="border-top:1px dashed var(--border);padding-top:0.25rem;margin-top:0.25rem;color:var(--accent);">
-            ⭐ 次選: ${rMap[pred2.result]} ${pred2.score} (信心${pred2.confidence}%) ${pred2.analysis||''}</div>`;
+          html += `<div class="pred-text" style="border-top:1px dashed var(--border);padding-top:0.25rem;margin-top:0.25rem;font-size:0.75rem;">
+            ⭐ 次選: ${rMap[pred2.result]} ${pred2.score} (信心${pred2.confidence}%)</div>`;
+        }
+        // Show 3rd prediction
+        if (pred3 && pred3.score) {
+          html += `<div class="pred-text" style="font-size:0.75rem;color:var(--text2);">
+            🔹 三選: ${rMap[pred3.result]} ${pred3.score} (信心${pred3.confidence}%)</div>`;
+        }
+        // Show HT/FT
+        if (htft && htft.text) {
+          html += `<div class="pred-text" style="font-size:0.75rem;color:#3b82f6;margin-top:0.15rem;">
+            🎯 ${htft.text}</div>`;
         }
 
         // Show rank & form data
