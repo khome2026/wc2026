@@ -946,7 +946,32 @@ async function autoVerifyMatch(id) {
     <div class="loading" style="margin:1rem auto;"></div>`);
 
   try {
-    // Strategy 1: HKJC results page (official) -> Wikipedia fallback
+    // Strategy 1: Fetch from HKJC official results page via Jina reader
+    const hkjcUrl = 'https://r.jina.ai/http://bet.hkjc.com/ch/football/results';
+    try {
+      const hkjcResp = await fetch(hkjcUrl, { headers: { 'Accept': 'text/plain' } });
+      if (hkjcResp.ok) {
+        const hkjcText = await hkjcResp.text();
+        const hkScore = extractHkjcScore(hkjcText, homeEn, awayEn);
+        if (hkScore) {
+          updateModal('log', `<div class="log-line info"><span class="time">足智彩</span><span class="msg">從足智彩賽果頁提取中...</span></div>`);
+          const r = getResult(id)||{};
+          r.h = hkScore[0]; r.a = hkScore[1]; r.auto = true; r.hkjc = true;
+          r.autoTime = new Date().toISOString();
+          setResult(id, r);
+          const c = evalPred(m.pred, hkScore[0], hkScore[1]);
+          r.review = c?'✅ 預測正確！':'❌ 預測錯誤。';
+          setResult(id, r);
+          updateModal('log', `<div class="log-line ok"><span class="time">✅</span><span class="msg">足智彩官方: ${m.home} ${hkScore[0]}-${hkScore[1]} ${m.away}</span></div>`);
+          setTimeout(() => closeModal(), 2000);
+          return;
+        }
+      }
+    } catch(e) {
+      updateModal('log', `<div class="log-line info"><span class="time"></span><span class="msg">足智彩直連失敗，改用Wikipedia...</span></div>`);
+    }
+    
+    // Strategy 2: Wikipedia group page fallback
     const groupLetter = m.group || 'A';
     const searchQuery = `2026 FIFA World Cup Group ${groupLetter}`;
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchQuery)}&format=json&origin=*`;
@@ -1082,8 +1107,8 @@ function extractScoreFromText(text, homeEn, awayEn) {
   let m = text.match(p1);
   if (m) return [parseInt(m[1]), parseInt(m[2])];
 
-  // Strategy 2: "win the game X–Y" or "won the match X–Y"
-  const p2 = /(?:win|won|winning)\s+(?:the\s+)?(?:game|match)\s+(\d+)[–-](\d+)/i;
+  // Strategy 2: "win the game X–Y", "won 2-1", "going on to win X–Y"
+  const p2 = /(?:win|won|winning)(?:\s+(?:the\s+)?(?:game|match))?\s+(\d+)[–-](\d+)/i;
   m = text.match(p2);
   if (m) return [parseInt(m[1]), parseInt(m[2])];
 
@@ -1101,16 +1126,15 @@ function extractScoreFromTextFallback(text, homeEn, awayEn) {
   let m = text.match(p4);
   if (m) return [parseInt(m[1]), parseInt(m[2])];
 
-  // Strategy 5: "TeamA won X–Y" or "TeamA defeated ... X–Y"  
-  const p5 = new RegExp(`${escapeRegex(homeEn)}.*?(?:won|defeated|beat).*?(\\d+)[–-](\\d+)`, 'i');
+  // Strategy 5: "TeamA won/beat/saw off/edged X–Y" or "TeamA going on to win X–Y"
+  const p5 = new RegExp(`${escapeRegex(homeEn)}.*?(?:won|win|defeated|beat|edged|saw off).*?(\\d+)[–-](\\d+)`, 'i');
   m = text.match(p5);
   if (m) return [parseInt(m[1]), parseInt(m[2])];
 
-  // Strategy 6: "It was X-Y" near team name context
-  const p6 = new RegExp(`(?:was|made it|scored|made)\\s+(\\d+)[–-](\\d+)`, 'i');
+  // Strategy 6: "It was X-Y" near team name context (last score mentioned)
+  const p6 = /(?:was|made it|scored|made)\s+(\d+)[–-](\d+)/gi;
   const allScores = [...text.matchAll(p6)];
   if (allScores.length > 0) {
-    // Use the last score mentioned (usually the final)
     const last = allScores[allScores.length - 1];
     return [parseInt(last[1]), parseInt(last[2])];
   }
@@ -1209,6 +1233,60 @@ function generateReport() {
 // ═══════════════════════════════════════════════
 //  HELPERS
 // ═══════════════════════════════════════════════
+
+// Extract score from HKJC results page text (via Jina reader)
+function extractHkjcScore(text, homeEn, awayEn) {
+  // Map English team names back to Chinese for HKJC format matching
+  const enToCn = {};
+  for (const [cn, en] of Object.entries({
+    '墨西哥':'Mexico','南非':'South Africa','南韓':'South Korea','捷克':'Czech Republic',
+    '加拿大':'Canada','波斯尼亞':'Bosnia','卡塔爾':'Qatar','瑞士':'Switzerland',
+    '巴西':'Brazil','摩洛哥':'Morocco','海地':'Haiti','蘇格蘭':'Scotland',
+    '美國':'United States','巴拉圭':'Paraguay','澳洲':'Australia','土耳其':'Turkey',
+    '德國':'Germany','庫拉索':'Curacao','科特迪瓦':'Ivory Coast','厄瓜多爾':'Ecuador',
+    '荷蘭':'Netherlands','日本':'Japan','瑞典':'Sweden','突尼西亞':'Tunisia',
+    '比利時':'Belgium','埃及':'Egypt','伊朗':'Iran','紐西蘭':'New Zealand',
+    '西班牙':'Spain','維德角':'Cape Verde','沙特阿拉伯':'Saudi Arabia','烏拉圭':'Uruguay',
+    '法國':'France','塞內加爾':'Senegal','伊拉克':'Iraq','挪威':'Norway',
+    '阿根廷':'Argentina','阿爾及利亞':'Algeria','奧地利':'Austria','約旦':'Jordan',
+    '葡萄牙':'Portugal','剛果民主':'DR Congo','烏茲別克':'Uzbekistan','哥倫比亞':'Colombia',
+    '英格蘭':'England','克羅地亞':'Croatia','加納':'Ghana','巴拿馬':'Panama'
+  })) { enToCn[en] = cn; }
+  
+  const homeCn = enToCn[homeEn];
+  const awayCn = enToCn[awayEn];
+  if (!homeCn || !awayCn) return null;
+  
+  // Find the match block: "homeCn 對 awayCn" followed by half score and full score
+  const pattern = new RegExp(
+    escapeRegex(homeCn) + '\\s+對\\s+' + escapeRegex(awayCn) + 
+    '\\s+\\d+\\s*:\\s*\\d+\\s+\\d+\\s*:\\s*\\d+', 'i'
+  );
+  const match = text.match(pattern);
+  if (match) {
+    // Extract the two scores from the matched string
+    const scores = match[0].match(/(\\d+)\\s*:\\s*(\\d+)\\s+(\\d+)\\s*:\\s*(\\d+)/);
+    if (scores) {
+      return [parseInt(scores[3]), parseInt(scores[4])];
+    }
+  }
+  
+  // Simpler approach: find the team and look for score pattern after
+  const lines = text.split('\\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes(homeCn) && lines[i].includes('對')) {
+      // Next lines should have scores
+      const afterText = lines.slice(i, i + 5).join(' ');
+      const scoreMatch = afterText.match(/(\\d+)\\s*:\\s*(\\d+)\\s+(\\d+)\\s*:\\s*(\\d+)/);
+      if (scoreMatch) {
+        return [parseInt(scoreMatch[3]), parseInt(scoreMatch[4])];
+      }
+    }
+  }
+  return null;
+}
+
+
 function teamToEnglish(name) {
   const map = {
     '阿根廷':'Argentina','法國':'France','巴西':'Brazil','比利時':'Belgium','英格蘭':'England',
