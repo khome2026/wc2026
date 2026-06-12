@@ -922,15 +922,13 @@ function resetAll() {
 }
 
 // ═══════════════════════════════════════════════
-//  AUTO VERIFY — Fetch results from Wikipedia
+//  AUTO VERIFY — Fetch results from Wikipedia (v2 - improved)
 // ═══════════════════════════════════════════════
 async function autoVerifyMatch(id) {
   const m = ALL_MATCHES.find(x => x.id===id);
   if (!m) return;
   if (m.date==='待定') { alert('賽程未定，無法核對'); return; }
 
-  const [y,mo,d] = m.date.split('-');
-  const dateStr = `${y}-${mo}-${d}`;
   const homeEn = teamToEnglish(m.home);
   const awayEn = teamToEnglish(m.away);
 
@@ -939,20 +937,21 @@ async function autoVerifyMatch(id) {
     <div class="loading" style="margin:1rem auto;"></div>`);
 
   try {
-    // Search Wikipedia for the match
-    const query = `${dateStr.replace(/-/g,' ')} FIFA World Cup ${homeEn} ${awayEn}`;
-    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
+    // Strategy 1: Find the Group page (most reliable)
+    const groupLetter = m.group || 'A';
+    const searchQuery = `2026 FIFA World Cup Group ${groupLetter}`;
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchQuery)}&format=json&origin=*`;
     const searchResp = await fetch(searchUrl);
     const searchData = await searchResp.json();
+    let pageTitle = searchData?.query?.search?.filter(s => s.title.includes('Group'))?.[0]?.title;
 
-    const pageTitle = searchData?.query?.search?.[0]?.title;
     if (!pageTitle) {
-      updateModal('log', `<div class="log-line err"><span class="time">結果</span><span class="msg">❌ 未能找到賽果，請手動輸入</span></div>`);
+      updateModal('log', `<div class="log-line err"><span class="time">結果</span><span class="msg">❌ 找不到賽果頁面</span></div>`);
       return;
     }
 
-    // Get page content
-    const contentUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles=${encodeURIComponent(pageTitle)}&format=json&origin=*`;
+    // Get FULL page content (no exintro to avoid truncation)
+    const contentUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=${encodeURIComponent(pageTitle)}&format=json&origin=*`;
     const contentResp = await fetch(contentUrl);
     const contentData = await contentResp.json();
     const pages = contentData?.query?.pages || {};
@@ -963,48 +962,42 @@ async function autoVerifyMatch(id) {
       return;
     }
 
-    // Try to extract score (pattern: "Team A 1–0 Team B" or "Team A 1-0 Team B")
-    const patterns = [
-      new RegExp(`${escapeRegex(homeEn)}\\s+(\\d+)[–-](\\d+)\\s+${escapeRegex(awayEn)}`, 'i'),
-      new RegExp(`${escapeRegex(awayEn)}\\s+(\\d+)[–-](\\d+)\\s+${escapeRegex(homeEn)}`, 'i'),
-      new RegExp(`(\\d+)[–-](\\d+)\\s+${escapeRegex(awayEn)}`, 'i'),
-    ];
-
-    let score1 = null, score2 = null;
-    for (const p of patterns) {
-      const match = text.match(p);
-      if (match) {
-        if (match[0].includes(homeEn) && match.index < text.indexOf(awayEn)) {
-          score1 = parseInt(match[1]); score2 = parseInt(match[2]);
-        } else if (match[0].includes(awayEn) && match.index < text.indexOf(homeEn)) {
-          score1 = parseInt(match[2]); score2 = parseInt(match[1]);
-        } else {
-          score1 = parseInt(match[1]); score2 = parseInt(match[2]);
-        }
-        break;
-      }
-    }
-
-    if (score1 !== null && score2 !== null) {
+    // Extract score using multiple strategies
+    const score = extractScoreFromText(text, homeEn, awayEn);
+    
+    if (score !== null) {
       const r = getResult(id)||{};
-      r.h = score1; r.a = score2; r.auto = true; r.autoTime = new Date().toISOString();
+      r.h = score[0]; r.a = score[1]; r.auto = true; r.autoTime = new Date().toISOString();
       setResult(id, r);
-      updateModal('log', `<div class="log-line ok"><span class="time">✅ 結果</span><span class="msg">${m.home} ${score1}-${score2} ${m.away}（自動核對成功）</span></div>`);
+      updateModal('log', `<div class="log-line ok"><span class="time">✅ 結果</span><span class="msg">${m.home} ${score[0]}-${score[1]} ${m.away}（自動核對成功）</span></div>`);
 
       // Generate auto review
-      const c = evalPred(m.pred, score1, score2);
+      const c = evalPred(m.pred, score[0], score[1]);
       let review = c===true?'✅ 預測正確！':'❌ 預測錯誤。';
       if (m.pred && m.pred.score) {
         const predScore = m.pred.score.split('-');
-        review += ` 預測比數${m.pred.score}，實際${score1}-${score2}。`;
-        if (parseInt(predScore[0])===score1 && parseInt(predScore[1])===score2) review += ' 比數完全命中！';
+        review += ` 預測比數${m.pred.score}，實際${score[0]}-${score[1]}。`;
+        if (parseInt(predScore[0])===score[0] && parseInt(predScore[1])===score[1]) review += ' 比數完全命中！';
       }
       const rr = getResult(id)||{};
       rr.review = review;
       setResult(id, rr);
       setTimeout(() => closeModal(), 2000);
     } else {
-      updateModal('log', `<div class="log-line err"><span class="time">結果</span><span class="msg">⚠️ 找到頁面但無法提取比數，請手動輸入</span></div>`);
+      // Try Strategy 2: Get match text from different section
+      updateModal('log', `<div class="log-line info"><span class="time">再試</span><span class="msg">嘗試不同方法提取比數...</span></div>`);
+      
+      // Search for score in "win the game X-Y" format
+      const score2 = extractScoreFromTextFallback(text, homeEn, awayEn);
+      if (score2 !== null) {
+        const r = getResult(id)||{};
+        r.h = score2[0]; r.a = score2[1]; r.auto = true;
+        setResult(id, r);
+        updateModal('log', `<div class="log-line ok"><span class="time">✅ 結果</span><span class="msg">${m.home} ${score2[0]}-${score2[1]} ${m.away}</span></div>`);
+        setTimeout(() => closeModal(), 2000);
+      } else {
+        updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">無法自動提取比數，請手動輸入或查看 <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(pageTitle)}" target="_blank">Wikipedia</a></span></div>`);
+      }
     }
   } catch(e) {
     updateModal('log', `<div class="log-line err"><span class="time">錯誤</span><span class="msg">${e.message}</span></div>`);
@@ -1017,47 +1010,103 @@ async function autoVerifyAll() {
   let total = 0, success = 0, fail = 0;
   const completed = ALL_MATCHES.filter(m => isCompleted(m) && m.date!=='待定');
 
-  for (const m of completed) {
-    total++;
-    updateModal('log', `<div class="log-line info"><span class="time">[${total}/${completed.length}]</span><span class="msg">${m.home} vs ${m.away}...</span></div>`);
+  // Group by group letter to minimize API calls
+  const groups = {};
+  completed.forEach(m => {
+    const g = m.group || 'A';
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(m);
+  });
 
-    const [y,mo,d] = m.date.split('-');
-    const dateStr = `${y}-${mo}-${d}`;
-    const homeEn = teamToEnglish(m.home);
-    const awayEn = teamToEnglish(m.away);
+  for (const [groupLetter, matches] of Object.entries(groups)) {
+    updateModal('log', `<div class="log-line info"><span class="time">${groupLetter}組</span><span class="msg">正在獲取 ${groupLetter} 組賽果...</span></div>`);
 
     try {
-      const query = `${dateStr} FIFA World Cup ${homeEn} ${awayEn}`;
-      const resp = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`);
+      // Get the group page once for all matches in this group
+      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent('2026 FIFA World Cup Group ' + groupLetter)}&format=json&origin=*`;
+      const resp = await fetch(searchUrl);
       const data = await resp.json();
-      const pageTitle = data?.query?.search?.[0]?.title;
-      if (!pageTitle) { fail++; continue; }
+      const pageTitle = data?.query?.search?.filter(s => s.title.includes('Group'))?.[0]?.title;
+      if (!pageTitle) { fail += matches.length; continue; }
 
-      const cResp = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles=${encodeURIComponent(pageTitle)}&format=json&origin=*`);
+      const cResp = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=${encodeURIComponent(pageTitle)}&format=json&origin=*`);
       const cData = await cResp.json();
-      const text = Object.values(cData?.query?.pages||{})[0]?.extract||'';
+      const text = Object.values(cData?.query?.pages || {})[0]?.extract || '';
+      if (!text) { fail += matches.length; continue; }
 
-      const pat = new RegExp(`${escapeRegex(homeEn)}\\s+(\\d+)[–-](\\d+)\\s+${escapeRegex(awayEn)}`, 'i');
-      const match = text.match(pat);
-      if (match) {
-        const s1 = parseInt(match[1]), s2 = parseInt(match[2]);
-        const r = getResult(m.id)||{};
-        r.h = s1; r.a = s2; r.auto = true;
-        setResult(m.id, r);
-        success++;
-        const c = evalPred(m.pred, s1, s2);
-        const review = c?'✅ 預測正確！':'❌ 預測錯誤。';
-        rr = getResult(m.id)||{};
-        rr.review = review;
-        setResult(m.id, rr);
-      } else { fail++; }
-    } catch(e) { fail++; }
-    await new Promise(r => setTimeout(r, 500));
+      for (const m of matches) {
+        total++;
+        const homeEn = teamToEnglish(m.home);
+        const awayEn = teamToEnglish(m.away);
+        
+        const score = extractScoreFromText(text, homeEn, awayEn) || extractScoreFromTextFallback(text, homeEn, awayEn);
+        
+        if (score) {
+          const r = getResult(m.id)||{};
+          r.h = score[0]; r.a = score[1]; r.auto = true;
+          const c = evalPred(m.pred, score[0], score[1]);
+          r.review = c?'✅ 預測正確！':'❌ 預測錯誤。';
+          setResult(m.id, r);
+          success++;
+          updateModal('log', `<div class="log-line ok"><span class="time">✅</span><span class="msg">${m.home} ${score[0]}-${score[1]} ${m.away}</span></div>`);
+        } else {
+          fail++;
+          updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">${m.home} vs ${m.away} 無法提取</span></div>`);
+        }
+      }
+    } catch(e) {
+      fail += matches.length;
+      updateModal('log', `<div class="log-line err"><span class="time">錯誤</span><span class="msg">${e.message}</span></div>`);
+    }
+    await new Promise(r => setTimeout(r, 300));
   }
 
   updateModal('title', `🌐 核對完成 (${success}/${total} 成功)`);
   updateModal('log', `<div class="log-line ok"><span class="time">完成</span><span class="msg">✅ ${success} 場自動核對成功，${fail} 場失敗</span></div>`);
   setTimeout(() => { closeModal(); render(); }, 2000);
+}
+
+// Extract score from match description text - multiple strategies
+function extractScoreFromText(text, homeEn, awayEn) {
+  // Strategy 1: "TeamA X–Y TeamB" or "TeamA X-Y TeamB"
+  const p1 = new RegExp(`${escapeRegex(homeEn)}\\s+(\\d+)[–-](\\d+)\\s+${escapeRegex(awayEn)}`, 'i');
+  let m = text.match(p1);
+  if (m) return [parseInt(m[1]), parseInt(m[2])];
+
+  // Strategy 2: "win the game X–Y" or "won the match X–Y"
+  const p2 = /(?:win|won|winning)\s+(?:the\s+)?(?:game|match)\s+(\d+)[–-](\d+)/i;
+  m = text.match(p2);
+  if (m) return [parseInt(m[1]), parseInt(m[2])];
+
+  // Strategy 3: "defeated TeamB X–Y" or "beat TeamB X–Y"
+  const p3 = new RegExp(`(?:defeated|beat|edged)\\s+${escapeRegex(awayEn)}\\s+(\\d+)[–-](\\d+)`, 'i');
+  m = text.match(p3);
+  if (m) return [parseInt(m[1]), parseInt(m[2])];
+
+  return null;
+}
+
+function extractScoreFromTextFallback(text, homeEn, awayEn) {
+  // Strategy 4: "X–Y victory for TeamA"
+  const p4 = new RegExp(`(\\d+)[–-](\\d+)\\s+victory\\s+for\\s+${escapeRegex(homeEn)}`, 'i');
+  let m = text.match(p4);
+  if (m) return [parseInt(m[1]), parseInt(m[2])];
+
+  // Strategy 5: "TeamA won X–Y" or "TeamA defeated ... X–Y"  
+  const p5 = new RegExp(`${escapeRegex(homeEn)}.*?(?:won|defeated|beat).*?(\\d+)[–-](\\d+)`, 'i');
+  m = text.match(p5);
+  if (m) return [parseInt(m[1]), parseInt(m[2])];
+
+  // Strategy 6: "It was X-Y" near team name context
+  const p6 = new RegExp(`(?:was|made it|scored|made)\\s+(\\d+)[–-](\\d+)`, 'i');
+  const allScores = [...text.matchAll(p6)];
+  if (allScores.length > 0) {
+    // Use the last score mentioned (usually the final)
+    const last = allScores[allScores.length - 1];
+    return [parseInt(last[1]), parseInt(last[2])];
+  }
+
+  return null;
 }
 
 // ═══════════════════════════════════════════════
