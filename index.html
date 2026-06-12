@@ -639,7 +639,9 @@ function isCompleted(m) {
   if (!m.date || m.date==='待定') return false;
   const [y,mo,d] = m.date.split('-');
   const [hh,mm] = (m.time||'00:00').split(':');
-  return new Date() > new Date(+y, +mo-1, +d, +hh, +mm, 0) + 120*60000;
+  // Match times are in HKT (UTC+8). Use UTC to avoid browser timezone issues.
+  const matchUtc = Date.UTC(+y, +mo-1, +d, +hh-8, +mm, 0);
+  return Date.now() > matchUtc + 120*60000;
 }
 
 function evalPred(pred, h, a) {
