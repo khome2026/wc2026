@@ -1039,65 +1039,115 @@ async function autoVerifyMatch(id) {
 }
 
 async function autoVerifyAll() {
-  showModal('🌐 自動核對所有已完場賽事 (來源: 足智彩+Wikipedia)', '<div class="loading" style="margin:1rem auto;"></div>');
-
+  showModal('🌐 自動核對所有已完場賽事', '<div class="loading" style="margin:1rem auto;"></div>');
+  
   let total = 0, success = 0, fail = 0;
+  // Get all matches directly (not filtered by group)
   const completed = ALL_MATCHES.filter(m => isCompleted(m) && m.date!=='待定');
+  
+  updateModal('log', `<div class="log-line info"><span class="time"></span><span class="msg">正在核對 ${completed.length} 場已完場賽事...</span></div>`);
 
-  // Group by group letter to minimize API calls
-  const groups = {};
-  completed.forEach(m => {
-    const g = m.group || 'A';
-    if (!groups[g]) groups[g] = [];
-    groups[g].push(m);
-  });
-
-  for (const [groupLetter, matches] of Object.entries(groups)) {
-    updateModal('log', `<div class="log-line info"><span class="time">${groupLetter}組</span><span class="msg">正在獲取 ${groupLetter} 組賽果...</span></div>`);
+  for (const m of completed) {
+    total++;
+    const homeEn = teamToEnglish(m.home);
+    const awayEn = teamToEnglish(m.away);
+    const groupLetter = m.group || 'A';
+    
+    updateModal('log', `<div class="log-line info"><span class="time">[${total}/${completed.length}]</span><span class="msg">${m.home} vs ${m.away}...</span></div>`);
 
     try {
-      // Get the group page once for all matches in this group
+      // Search for the group page on Wikipedia
       const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent('2026 FIFA World Cup Group ' + groupLetter)}&format=json&origin=*`;
       const resp = await fetch(searchUrl);
       const data = await resp.json();
-      const pageTitle = data?.query?.search?.filter(s => s.title.includes('Group'))?.[0]?.title;
-      if (!pageTitle) { fail += matches.length; continue; }
-
-      const cResp = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=${encodeURIComponent(pageTitle)}&format=json&origin=*`);
-      const cData = await cResp.json();
-      const text = Object.values(cData?.query?.pages || {})[0]?.extract || '';
-      if (!text) { fail += matches.length; continue; }
-
-      for (const m of matches) {
-        total++;
-        const homeEn = teamToEnglish(m.home);
-        const awayEn = teamToEnglish(m.away);
-        
-        const score = extractScoreFromText(text, homeEn, awayEn) || extractScoreFromTextFallback(text, homeEn, awayEn);
-        
-        if (score) {
-          const r = getResult(m.id)||{};
-          r.h = score[0]; r.a = score[1]; r.auto = true;
-          const c = evalPred(m.pred, score[0], score[1]);
-          r.review = c?'✅ 預測正確！':'❌ 預測錯誤。';
-          setResult(m.id, r);
-          success++;
-          updateModal('log', `<div class="log-line ok"><span class="time">✅</span><span class="msg">${m.home} ${score[0]}-${score[1]} ${m.away}</span></div>`);
-        } else {
-          fail++;
-          updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">${m.home} vs ${m.away} 無法提取</span></div>`);
+      
+      // Find the group page (filter out the main tournament page)
+      const searchResults = data?.query?.search || [];
+      let pageTitle = null;
+      for (const r of searchResults) {
+        if (r.title.includes('Group ' + groupLetter)) {
+          pageTitle = r.title;
+          break;
         }
       }
+      
+      if (!pageTitle) {
+        updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">找不到 ${groupLetter} 組賽果頁面</span></div>`);
+        fail++; continue;
+      }
+
+      // Get the full page content
+      const contentUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=${encodeURIComponent(pageTitle)}&format=json&origin=*`;
+      const cResp = await fetch(contentUrl);
+      const cData = await cResp.json();
+      const pages = cData?.query?.pages || {};
+      const pageContent = Object.values(pages)[0];
+      const text = pageContent?.extract || '';
+      
+      if (!text || text.length < 100) {
+        updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">${groupLetter} 組頁面內容不足</span></div>`);
+        fail++; continue;
+      }
+      
+      // Find the specific match section in the text
+      const matchSection = findMatchSection(text, homeEn, awayEn);
+      
+      // Try to extract score using all strategies on the match section or full text
+      const targetText = matchSection || text;
+      const score = extractScoreFromText(targetText, homeEn, awayEn) 
+                 || extractScoreFromTextFallback(targetText, homeEn, awayEn);
+      
+      if (score) {
+        const r = getResult(m.id) || {};
+        r.h = score[0]; r.a = score[1]; r.auto = true;
+        const correct = evalPred(m.pred, score[0], score[1]);
+        r.review = correct ? '✅ 預測正確！' : '❌ 預測錯誤。';
+        if (m.pred && m.pred.score) {
+          r.review += ` 預測${m.pred.score}，實際${score[0]}-${score[1]}。`;
+        }
+        setResult(m.id, r);
+        success++;
+        updateModal('log', `<div class="log-line ok"><span class="time">✅</span><span class="msg">${m.home} ${score[0]}-${score[1]} ${m.away}</span></div>`);
+      } else {
+        // Debug: show the text around the team names for debugging
+        const debugText = findMatchSection(text, homeEn, awayEn) || text;
+        const snippet = debugText.length > 200 ? debugText.substring(0, 200) + '...' : debugText;
+        updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">${m.home} vs ${m.away} 無法提取比數</span></div>`);
+        fail++;
+      }
     } catch(e) {
-      fail += matches.length;
-      updateModal('log', `<div class="log-line err"><span class="time">錯誤</span><span class="msg">${e.message}</span></div>`);
+      updateModal('log', `<div class="log-line err"><span class="time">⚠️</span><span class="msg">${m.home} vs ${m.away}: ${e.message.substring(0,80)}</span></div>`);
+      fail++;
     }
-    await new Promise(r => setTimeout(r, 300));
+    // Small delay between requests to avoid rate limiting
+    await new Promise(r => setTimeout(r, 200));
   }
 
   updateModal('title', `🌐 核對完成 (${success}/${total} 成功)`);
   updateModal('log', `<div class="log-line ok"><span class="time">完成</span><span class="msg">✅ ${success} 場自動核對成功，${fail} 場失敗</span></div>`);
-  setTimeout(() => { closeModal(); render(); }, 2000);
+  // Auto-close after 3 seconds and refresh
+  setTimeout(() => { closeModal(); render(); }, 3000);
+}
+
+// Find the section of text that mentions both teams (the match description)
+function findMatchSection(text, homeEn, awayEn) {
+  // Look for the match header like "=== Mexico vs South Africa ==="
+  const headerPattern = new RegExp(
+    '===?\\s*' + escapeRegex(homeEn) + '\\s*vs\\s*' + escapeRegex(awayEn) + '\\s*===?', 'i'
+  );
+  let idx = text.search(headerPattern);
+  if (idx === -1) {
+    // Try "=== South Korea vs Czech Republic ===" or similar
+    const headerPattern2 = new RegExp(
+      '===?\\s*' + escapeRegex(awayEn) + '\\s*vs\\s*' + escapeRegex(homeEn) + '\\s*===?', 'i'
+    );
+    idx = text.search(headerPattern2);
+  }
+  if (idx >= 0) {
+    // Return 2000 chars from the match header
+    return text.substring(idx, idx + 2000);
+  }
+  return null;
 }
 
 // Extract score from match description text - multiple strategies
