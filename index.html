@@ -1077,8 +1077,18 @@ async function autoVerifyAll() {
       if (score) {
         const r = getResult(m.id) || {};
         r.h = score[0]; r.a = score[1]; r.auto = true;
-        const correct = evalPred(m.pred, score[0], score[1]);
+        // Explicitly get prediction from prediction property
+        var predObj = m.prediction || m.pred2 || null;
+        var correct = false;
+        if (predObj && predObj.result) {
+          var act = r.h > r.a ? 'H' : (r.h < r.a ? 'A' : 'D');
+          correct = (predObj.result === act);
+        }
         r.review = correct ? '✅ 預測正確！' : '❌ 預測錯誤。';
+        if (predObj && predObj.score) {
+          r.review += ' 預測' + predObj.score + '，實際' + r.h + '-' + r.a + '。';
+          if (predObj.score === r.h + '-' + r.a) r.review += ' 比數完全命中！';
+        }
         setResult(m.id, r);
         success++;
         updateModal('log', `<div class="log-line ok"><span class="time">✅</span><span class="msg">${m.home} ${score[0]}-${score[1]} ${m.away}</span></div>`);
