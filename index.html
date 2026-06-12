@@ -1099,46 +1099,63 @@ async function autoVerifyAll() {
 
 // Simple direct score extraction - handles multiple formats
 function getScoreDirect(text, homeEn, awayEn) {
+  // IMPORTANT: Find the specific match section first to avoid picking
+  // up historical results from other parts of the page
+  var section = findMatchText(text, homeEn, awayEn);
+  var search = section || text;
+  
   // Pattern 1: "Mexico 2–0 South Africa" (score directly between team names)
   var p1 = new RegExp(homeEn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+(\\d+)[–\\u2013-](\\d+)\\s+' + awayEn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-  var m = text.match(p1);
+  var m = search.match(p1);
   if (m) return [parseInt(m[1]), parseInt(m[2])];
   
   // Pattern 2: "win 2-0" or "win the game 2-0" or "going on to win 2-1"
   var p2 = /(win|won|winning)(?:\s+(?:the\s+)?(?:game|match|it))?\s+(\d+)[–\-](\d+)/gi;
   var allMatches = [];
   var match;
-  while ((match = p2.exec(text)) !== null) {
+  while ((match = p2.exec(search)) !== null) {
     allMatches.push([parseInt(match[2]), parseInt(match[3]), match.index]);
   }
   if (allMatches.length > 0) {
-    // Use the LAST "win" mention (closest to final score)
     var last = allMatches[allMatches.length - 1];
     return [last[0], last[1]];
   }
   
   // Pattern 3: "X–Y victory for TeamA" or "TeamA won X–Y"  
   var p3 = new RegExp(homeEn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '.*?(?:win|won|defeat|beat|edged).*?(\\d+)[–\-](\\d+)', 'i');
-  var m3 = text.match(p3);
+  var m3 = search.match(p3);
   if (m3) return [parseInt(m3[1]), parseInt(m3[2])];
   
   // Pattern 4: Any scoreline (X–Y) in the text - use the last one
   var p4 = /(\d+)[–\-](\d+)/g;
   var scores = [];
-  while ((m = p4.exec(text)) !== null) {
+  while ((m = p4.exec(search)) !== null) {
     scores.push([parseInt(m[1]), parseInt(m[2]), m.index]);
   }
-  
-  // Filter out scores that are too large (not football scores)
   scores = scores.filter(function(s) { return s[0] < 10 && s[1] < 10; });
-  
   if (scores.length > 0) {
-    // For Mexico vs South Africa: "2-0" appears in the match description
-    // For South Korea vs Czech Republic: "2-1" is the final score
-    // Use the LAST score (closest to end of section = final score)
     return [scores[scores.length-1][0], scores[scores.length-1][1]];
   }
   
+  return null;
+}
+
+// Find the section of text between "=== TeamX vs TeamY ===" markers
+function findMatchText(text, homeEn, awayEn) {
+  // Look for "=== Mexico vs South Africa ===" or "=== Mexico vs South Africa ==="
+  var h1 = new RegExp('===?\\s*' + homeEn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*v\\.?s\\.?\\s*' + awayEn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*===?', 'i');
+  var idx = text.search(h1);
+  if (idx === -1) {
+    var h2 = new RegExp('===?\\s*' + awayEn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*v\\.?s\\.?\\s*' + homeEn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*===?', 'i');
+    idx = text.search(h2);
+  }
+  if (idx >= 0) {
+    // Find the next === header after this match section
+    var nextHeader = text.indexOf('\n===', idx + 10);
+    if (nextHeader === -1) nextHeader = text.indexOf('\n==', idx + 10);
+    if (nextHeader === -1) nextHeader = idx + 2000;
+    return text.substring(idx, Math.min(nextHeader, idx + 2000));
+  }
   return null;
 }
 
