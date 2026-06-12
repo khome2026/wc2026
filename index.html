@@ -202,7 +202,7 @@
 </div>
 
 <div class="footer">
-  <p>📊 賠率及賽程: <a href="https://football.hkjc.com/zh-hk/home" target="_blank">香港賽馬會足智彩</a> • 排名: FIFA Rankings • 近況: 近10場<br>🌐 賽果自動核對: <a href="https://bet.hkjc.com/ch/football/results" target="_blank">足智彩賽果頁</a>（無需登入）+ Wikipedia 輔助<br>🎯 每場提供2個比數預測 (首選+次選) 基於排名、近況、賠率綜合分析</p>
+  <p>📊 賠率及賽程: <a href="https://football.hkjc.com/zh-hk/home" target="_blank">香港賽馬會足智彩</a> • 排名: FIFA Rankings • 近況: 近10場<br>🌐 賽果自動核對: <a href="https://bet.hkjc.com/ch/football/results" target="_blank">足智彩賽果頁</a>（官方來源）<br>🎯 每場提供2個比數預測 • 賠率及賽果全部來自足智彩</p>
   <p style="margin-top:0.3rem;">數據存於 localStorage • 賽果可自動核對 • 支援Excel匯出</p>
 </div>
 
@@ -1041,72 +1041,122 @@ async function autoVerifyMatch(id) {
 }
 
 async function autoVerifyAll() {
-  showModal('🌐 自動核對賽果 (來源: Wikipedia)', '<div class="loading" style="margin:1rem auto;"></div>');
+  showModal('🌐 自動核對賽果 (來源: 足智彩)', '<div class="loading" style="margin:1rem auto;"></div>');
   
   const completed = ALL_MATCHES.filter(m => isCompleted(m) && m.date!=='待定');
   updateModal('log', `<div class="log-line info"><span class="time"></span><span class="msg">找到 ${completed.length} 場已完場賽事</span></div>`);
   
   let success = 0, fail = 0;
   
-  for (let idx = 0; idx < completed.length; idx++) {
-    const m = completed[idx];
-    const homeEn = teamToEnglish(m.home);
-    const awayEn = teamToEnglish(m.away);
-    const g = m.group || 'A';
+  // Fetch HKJC results page via Jina reader (renders JavaScript SPAs)
+  updateModal('log', `<div class="log-line info"><span class="time"></span><span class="msg">正在從足智彩提取官方賽果...</span></div>`);
+  
+  try {
+    const hkjcResp = await fetch('https://r.jina.ai/http://bet.hkjc.com/ch/football/results', {
+      headers: { 'Accept': 'text/plain' }
+    });
     
-    updateModal('log', `<div class="log-line info"><span class="time">[${idx+1}/${completed.length}]</span><span class="msg">${m.home} vs ${m.away} (${g}組)...</span></div>`);
+    if (!hkjcResp.ok) {
+      updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">足智彩頁面無法讀取 (HTTP ${hkjcResp.status})</span></div>`);
+      closeModalAfter(3000);
+      return;
+    }
     
-    try {
-      // Fetch the Wikipedia group page directly (simpler approach)
-      const pageTitle = '2026_FIFA_World_Cup_Group_' + g;
-      const apiUrl = 'https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=' + encodeURIComponent(pageTitle) + '&format=json&origin=*';
+    const hkjcText = await hkjcResp.text();
+    updateModal('log', `<div class="log-line info"><span class="time"></span><span class="msg">足智彩數據已下載，正在比對...</span></div>`);
+    
+    // Parse HKJC results: format is "TeamA 對 TeamB\n半場\n全場"
+    const lines = hkjcText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    
+    for (let idx = 0; idx < completed.length; idx++) {
+      const m = completed[idx];
+      const homeCn = m.home;
+      const awayCn = m.away;
       
-      const resp = await fetch(apiUrl);
-      if (!resp.ok) { fail++; continue; }
+      updateModal('log', `<div class="log-line info"><span class="time">[${idx+1}/${completed.length}]</span><span class="msg">${homeCn} vs ${awayCn}...</span></div>`);
       
-      const data = await resp.json();
-      const pages = data.query?.pages || {};
-      const pageInfo = Object.values(pages)[0];
-      const text = pageInfo?.extract || '';
-      
-      if (text.length < 100) { fail++; continue; }
-      
-      // DIRECT approach: search for score in various formats
-      const score = getScoreDirect(text, homeEn, awayEn);
+      // Find the match in HKJC data: search for "TeamA 對 TeamB"
+      var score = findHkjcScore(lines, homeCn, awayCn);
       
       if (score) {
         const r = getResult(m.id) || {};
-        r.h = score[0]; r.a = score[1]; r.auto = true;
-        // Explicitly get prediction from prediction property
-        var predObj = m.prediction || m.pred2 || null;
+        r.h = score[0]; r.a = score[1]; r.auto = true; r.source = '足智彩';
+        
+        // Evaluate prediction
+        var predObj = m.prediction;
         var correct = false;
         if (predObj && predObj.result) {
-          var act = r.h > r.a ? 'H' : (r.h < r.a ? 'A' : 'D');
+          var act = score[0] > score[1] ? 'H' : (score[0] < score[1] ? 'A' : 'D');
           correct = (predObj.result === act);
         }
+        
         r.review = correct ? '✅ 預測正確！' : '❌ 預測錯誤。';
         if (predObj && predObj.score) {
-          r.review += ' 預測' + predObj.score + '，實際' + r.h + '-' + r.a + '。';
-          if (predObj.score === r.h + '-' + r.a) r.review += ' 比數完全命中！';
+          r.review += ' 預測' + predObj.score + '，實際' + score[0] + '-' + score[1] + '。';
+          if (predObj.score === score[0] + '-' + score[1]) r.review += ' 比數完全命中！';
         }
+        
         setResult(m.id, r);
         success++;
-        updateModal('log', `<div class="log-line ok"><span class="time">✅</span><span class="msg">${m.home} ${score[0]}-${score[1]} ${m.away}</span></div>`);
+        updateModal('log', `<div class="log-line ok"><span class="time">✅</span><span class="msg">${homeCn} ${score[0]}-${score[1]} ${awayCn}</span></div>`);
       } else {
         fail++;
-        updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">${m.home} vs ${m.away} 未能提取比數</span></div>`);
+        updateModal('log', `<div class="log-line err"><span class="time">❌</span><span class="msg">${homeCn} vs ${awayCn} 足智彩暫無賽果</span></div>`);
       }
-    } catch(e) {
-      fail++;
-      updateModal('log', `<div class="log-line err"><span class="time">⚠️</span><span class="msg">${e.message}</span></div>`);
     }
     
-    await new Promise(r => setTimeout(r, 200));
+    updateModal('title', '🌐 核對完成 (' + success + '/' + (success+fail) + ' 成功)');
+    updateModal('log', `<div class="log-line ok"><span class="time">完成</span><span class="msg">✅ ${success} 場從足智彩核對成功</span></div>`);
+    
+  } catch(e) {
+    updateModal('log', `<div class="log-line err"><span class="time">⚠️</span><span class="msg">讀取足智彩失敗: ${e.message}</span></div>`);
+    updateModal('log', `<div class="log-line info"><span class="time"></span><span class="msg">請確保可訪問 bet.hkjc.com</span></div>`);
   }
   
-  updateModal('title', '🌐 核對完成 (' + success + '/' + (success+fail) + ' 成功)');
-  updateModal('log', `<div class="log-line ok"><span class="time">完成</span><span class="msg">✅ ${success} 場成功，${fail} 場失敗</span></div>`);
   setTimeout(function() { closeModal(); render(); }, 3000);
+}
+
+// Find and extract score from HKJC results page data
+// Format: lines containing "TeamA 對 TeamB" followed by half score then full score
+function findHkjcScore(lines, homeCn, awayCn) {
+  for (var i = 0; i < lines.length; i++) {
+    // Look for "TeamA 對 TeamB"
+    if (lines[i].indexOf(homeCn) >= 0 && lines[i].indexOf('對') >= 0 && lines[i].indexOf(awayCn) >= 0) {
+      // Next lines should have scores: X : Y (half) and X : Y (full)
+      // Sometimes there's an image line between team line and scores
+      var halfScore = null, fullScore = null;
+      
+      for (var j = i + 1; j < Math.min(i + 8, lines.length); j++) {
+        var line = lines[j];
+        // Match "X : Y" pattern (with spaces around colon)
+        var scoreMatch = line.match(/(\d+)\s*:\s*(\d+)/);
+        if (scoreMatch) {
+          var s1 = parseInt(scoreMatch[1]);
+          var s2 = parseInt(scoreMatch[2]);
+          // Valid football scores
+          if (s1 < 15 && s2 < 15) {
+            if (halfScore === null) {
+              halfScore = [s1, s2];
+            } else if (fullScore === null) {
+              fullScore = [s1, s2];
+              // We found half-time and full-time scores
+              // Ignore lines with image markers or % 
+              // The full score is what we need
+              return fullScore;
+            }
+          }
+        }
+        // Stop at next team match or FB number
+        if (line.match(/FB\d{4}/) && j > i + 2) break;
+        if (line.indexOf(' 對 ') >= 0 && j > i + 2) break;
+      }
+      
+      // If we found half score but not full score, return half
+      if (halfScore && !fullScore) return halfScore;
+      if (fullScore) return fullScore;
+    }
+  }
+  return null;
 }
 
 // Simple direct score extraction - handles multiple formats
